@@ -307,6 +307,166 @@ check_dns_config() {
     fi
 }
 
+# Student 3
+check_setuid_files() {
+    section "SETUID FILES"
+ 
+    info "Searching for files with the setuid bit set (find / -perm -4000):"
+    SETUID_FILES=$(find / -perm -4000 -ls 2>/dev/null | grep -v '/proc')
+ 
+    if [ -z "$SETUID_FILES" ]; then
+        ok "No setuid files found."
+        return
+    fi
+ 
+    SETUID_COUNT=$(echo "$SETUID_FILES" | wc -l)
+    info "Found $SETUID_COUNT setuid file(s). Review each entry:"
+    echo "$SETUID_FILES" | while read -r line; do
+        OWNER=$(echo "$line" | awk '{print $5}')
+        FILEPATH=$(echo "$line" | awk '{print $NF}')
+        if [ "$OWNER" = "root" ]; then
+            warn "  [root-owned setuid] $FILEPATH"
+        else
+            info "  $FILEPATH (owner: $OWNER)"
+        fi
+    done
+    info "Verify that each setuid binary is legitimate and necessary."
+}
+ 
+check_world_writable_files() {
+    section "WORLD-WRITABLE FILES"
+ 
+    info "Searching for files writable by any user (find / -type f -perm -002):"
+    WW_FILES=$(find / -type f -perm -002 2>/dev/null | grep -v '/proc' | grep -v '/sys')
+ 
+    if [ -z "$WW_FILES" ]; then
+        ok "No world-writable files found."
+        return
+    fi
+ 
+    WW_COUNT=$(echo "$WW_FILES" | wc -l)
+    warn "Found $WW_COUNT world-writable file(s) - any user can modify these:"
+    echo "$WW_FILES" | while read -r filepath; do
+        OWNER=$(stat -c '%U' "$filepath" 2>/dev/null)
+        warn "  $filepath (owner: $OWNER)"
+    done
+    info "World-writable files can be modified by attackers to escalate privileges or inject code."
+}
+ 
+check_backup_permissions() {
+    section "BACKUP FILE PERMISSIONS"
+ 
+    info "Checking for backup files and directories with insecure permissions:"
+ 
+    for BKPDIR in /backup /var/backup /var/backups /root/backup /home/backup /tmp/backup; do
+        if [ -d "$BKPDIR" ]; then
+            BKPDIR_PERM=$(stat -c '%a' "$BKPDIR" 2>/dev/null)
+            if [ "$BKPDIR_PERM" -ge 5 ] && echo "$BKPDIR_PERM" | grep -qE '[57]$'; then
+                warn "Backup directory $BKPDIR is world-readable (permissions: $BKPDIR_PERM)!"
+            else
+                ok "Backup directory $BKPDIR permissions: $BKPDIR_PERM"
+            fi
+            find "$BKPDIR" -maxdepth 2 -type f 2>/dev/null | while read -r f; do
+                FPERM=$(stat -c '%a' "$f" 2>/dev/null)
+                if echo "$FPERM" | grep -qE '[2367]$'; then
+                    warn "  World-readable/writable backup file: $f (permissions: $FPERM)"
+                fi
+            done
+        fi
+    done
+ 
+    info "Checking for sensitive backup files scattered on the filesystem:"
+    find / -maxdepth 5 -type f \( -name '*.bak' -o -name '*.backup' -o -name '*.old' -o -name 'shadow.backup' \) \
+        2>/dev/null | grep -v '/proc' | grep -v '/sys' | while read -r f; do
+        FPERM=$(stat -c '%a' "$f" 2>/dev/null)
+        OWNER=$(stat -c '%U' "$f" 2>/dev/null)
+        warn "Sensitive backup file found: $f (permissions: $FPERM, owner: $OWNER)"
+    done
+}
+ 
+check_crontab() {
+    section "CRONTAB & SCHEDULED TASKS"
+ 
+    info "System-wide cron jobs (/etc/crontab):"
+    if [ -f /etc/crontab ]; then
+        grep -v '^#\|^$' /etc/crontab | awk '{print "    " $0}'
+    else
+        info "  /etc/crontab not found."
+    fi
+ 
+    info "Jobs in /etc/cron.d/:"
+    if [ -d /etc/cron.d ]; then
+        for f in /etc/cron.d/*; do
+            [ -f "$f" ] && grep -v '^#\|^$' "$f" | awk -v file="$f" '{print "    [" file "] " $0}'
+        done
+    fi
+ 
+    info "Per-user crontabs (/var/spool/cron/crontabs/):"
+    if [ -d /var/spool/cron/crontabs ]; then
+        for f in /var/spool/cron/crontabs/*; do
+            [ -f "$f" ] || continue
+            USER=$(basename "$f")
+            info "  Crontab for user: $USER"
+            grep -v '^#\|^$' "$f" | while read -r job; do
+                echo "      $job"
+                SCRIPT=$(echo "$job" | awk '{print $NF}')
+                if [ -f "$SCRIPT" ]; then
+                    SPERM=$(stat -c '%a' "$SCRIPT" 2>/dev/null)
+                    SOWNER=$(stat -c '%U' "$SCRIPT" 2>/dev/null)
+                    if echo "$SPERM" | grep -qE '[2367]$'; then
+                        warn "  Script $SCRIPT is world-writable (permissions: $SPERM, owner: $SOWNER)!"
+                    else
+                        ok "  Script $SCRIPT permissions look fine ($SPERM)."
+                    fi
+                fi
+            done
+        done
+    else
+        info "  No per-user crontabs found."
+    fi
+}
+ 
+check_mounted_partitions() {
+    section "MOUNTED PARTITIONS (/etc/fstab)"
+ 
+    if [ ! -f /etc/fstab ]; then
+        warn "/etc/fstab not found."
+        return
+    fi
+ 
+    info "Reviewing mount options for each partition:"
+    grep -v '^#\|^$' /etc/fstab | while read -r line; do
+        MOUNTPOINT=$(echo "$line" | awk '{print $2}')
+        OPTIONS=$(echo "$line" | awk '{print $4}')
+        info "  $MOUNTPOINT ($OPTIONS)"
+ 
+        if echo "$OPTIONS" | grep -q "noatime"; then
+            warn "  $MOUNTPOINT uses 'noatime' - inode access times will not be recorded, hindering intrusion analysis."
+        fi
+ 
+        if echo "$MOUNTPOINT" | grep -qE '^/tmp$|^/home$|^/var$'; then
+            if ! echo "$OPTIONS" | grep -q "noexec"; then
+                warn "  $MOUNTPOINT is missing 'noexec' - users may execute binaries from this partition."
+            else
+                ok "  $MOUNTPOINT has 'noexec'."
+            fi
+            if ! echo "$OPTIONS" | grep -q "nosuid"; then
+                warn "  $MOUNTPOINT is missing 'nosuid' - setuid binaries can be executed from this partition."
+            else
+                ok "  $MOUNTPOINT has 'nosuid'."
+            fi
+        fi
+ 
+        if echo "$MOUNTPOINT" | grep -q '^/dev$'; then
+            if ! echo "$OPTIONS" | grep -q "nosuid"; then
+                warn "  /dev is missing 'nosuid'."
+            else
+                ok "  /dev has 'nosuid'."
+            fi
+        fi
+    done
+}
+
 main() {
     echo -e "\n${BOLD}Linux Hardening Check Script${RESET}"
     echo -e "Started: $(date)"
@@ -332,6 +492,13 @@ main() {
     check_network_interfaces
     check_ssh_config
     check_dns_config
+
+    # Student 3
+    check_setuid_files
+    check_world_writable_files
+    check_backup_permissions
+    check_crontab
+    check_mounted_partitions
 }
 
 main

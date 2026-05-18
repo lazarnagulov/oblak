@@ -14,7 +14,6 @@ def _load_config_file() -> dict:
     if not CONFIG_FILE.exists():
         return {}
     try:
-        print(CONFIG_FILE)
         with open(CONFIG_FILE, "r") as f:
             return json.load(f)
     except Exception:

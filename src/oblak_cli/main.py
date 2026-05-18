@@ -1,8 +1,11 @@
 
 
+from cli import create_app
+
+
 def main():
-    print("Hello World!")
-    
+    app = create_app()
+    app()
 
 if __name__ == "__main__":
     main()

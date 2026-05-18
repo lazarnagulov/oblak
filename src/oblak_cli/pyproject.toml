@@ -1,0 +1,20 @@
+[project]
+name = "oblak-cli"
+version = "0.1.0"
+description = "Oblak CLI - Secure serverless execution platform"
+authors = [
+    { name = "Lazar Nagulov", email = "nagulov.sv61.2022@uns.ac.rs" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "typer[all]",
+    "rich"
+]
+
+[project.scripts]
+oblak = "oblak_cli.main:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"

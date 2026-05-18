@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lazarnagulov/oblak/server/internal/auth"
 	"github.com/lazarnagulov/oblak/server/internal/platform/logger"
 	"go.uber.org/zap"
 )
@@ -17,11 +18,15 @@ func main() {
 	if err != nil {
 		log.Panic("Failed to create logger")
 	}
-	r := NewRouter(log).Build()
+	r := NewRouter(log)
+
+	authHandler := auth.NewHandler(log)
+	r.RegisterRoutes(authHandler)
+	router := r.Build()
 
 	srv := &http.Server{
 		Addr:    ":8080",
-		Handler: r,
+		Handler: router,
 	}
 
 	log.Info("starting server",

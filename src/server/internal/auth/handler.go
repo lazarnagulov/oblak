@@ -1,22 +1,19 @@
 package auth
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
 type Handler struct {
-	log *zap.Logger
+	authService Service
+	log         *zap.Logger
 }
 
-func NewHandler(log *zap.Logger) *Handler {
-	return &Handler{log: log}
+func NewHandler(authService Service, log *zap.Logger) *Handler {
+	return &Handler{authService: authService, log: log}
 }
 
 func (h *Handler) Login(c *gin.Context) {
@@ -26,38 +23,15 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	// TODO: check user existance
-	token, err := GeneratePAT()
+	token, err := h.authService.Login(c.Request.Context(), req.Username, req.Password, "CLIENT")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
-	tokenHash := HashToken(token)
-	expiresAt := time.Now().Add(7 * 24 * time.Hour)
-
-	// TODO: write into db
-	_ = tokenHash
-	_ = expiresAt
-
 	c.JSON(http.StatusOK, gin.H{
-		"token":      token,
-		"username":   req.Username,
-		"expires_at": expiresAt.Format(time.RFC3339),
+		"token":    token,
+		"username": req.Username,
 	})
 
-}
-
-func GeneratePAT() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return "oblak_pat_" + hex.EncodeToString(bytes), nil
-}
-
-func HashToken(token string) string {
-	hasher := sha256.New()
-	hasher.Write([]byte(token))
-	return hex.EncodeToString(hasher.Sum(nil))
 }

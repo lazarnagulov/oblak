@@ -1,21 +1,16 @@
 package httputil
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazarnagulov/oblak/server/internal/auth"
 	"go.uber.org/zap"
 )
 
-var mockDB = map[string]string{
-	"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855": "user_123",
-}
-
-func RequireAPIKey(log *zap.Logger) gin.HandlerFunc {
+func RequireAPIKey(authService auth.Service, log *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -31,15 +26,9 @@ func RequireAPIKey(log *zap.Logger) gin.HandlerFunc {
 
 		token := parts[1]
 
-		hasher := sha256.New()
-		hasher.Write([]byte(token))
-		tokenHash := hex.EncodeToString(hasher.Sum(nil))
-
-		// 2. Provera u bazi podataka (ovde pozivaš svoju DB funkciju)
-		userID, exists := mockDB[tokenHash]
-
-		if !exists {
-			log.Warn("Unauthorized API key attempt", zap.String("ip", c.ClientIP()))
+		userID, err := authService.AuthenticateToken(c.Request.Context(), token)
+		if err != nil {
+			log.Warn("Unauthorized access attempt", zap.Error(err), zap.String("ip", c.ClientIP()))
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid API Key"})
 			return
 		}

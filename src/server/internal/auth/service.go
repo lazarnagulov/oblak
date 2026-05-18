@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -40,12 +41,13 @@ func (s *service) AuthenticateToken(ctx context.Context, rawToken string) (int, 
 
 func (s *service) Login(ctx context.Context, username string, password string, deviceName string) (string, error) {
 	user, err := s.repo.GetUserByUsername(ctx, username)
+
 	if err != nil {
 		s.log.Warn("Login failed: user not found", zap.String("username", username))
 		return "", errors.New("invalid username or password")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(strings.TrimSpace(password))); err != nil {
 		s.log.Warn("Login failed: incorrect password", zap.String("username", username))
 		return "", errors.New("invalid username or password")
 	}

@@ -1,9 +1,12 @@
+import requests
 from pathlib import Path
 from typing import Optional
 
 import typer
 import rich
 from rich.table import Table
+
+from . import auth
 
 
 app = typer.Typer(
@@ -16,6 +19,7 @@ function_app = typer.Typer(help="Function management commands")
 execution_app = typer.Typer(help="Execution management commands")
 config_app = typer.Typer(help="Configuration commands")
 
+
 app.add_typer(auth_app, name="auth")
 app.add_typer(function_app, name="function")
 app.add_typer(execution_app, name="execution")
@@ -26,19 +30,48 @@ def login(
     username: str = typer.Option(..., prompt=True),
     password: str = typer.Option(..., prompt=True, hide_input=True),
 ):
-    rich.print("[bold green]AUTH LOGIN[/bold green]")
-    rich.print(f"Username: {username}")
-    rich.print(f"Password length: {len(password)}")
+    url = auth.get_server_url()
+    rich.print(f"[yellow]Connecting to the server ({url})...[/yellow]")
+    
+    username = username.strip()
+    password = password.strip()
+    
+    try:
+        response = requests.post(
+            f"{url}/auth/login",
+            json={"username": username, "password": password},
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            auth.save_token(data["token"], username)
+            rich.print("[bold green]Authentication successful.[/bold green]")
+            rich.print(f"Welcome back, [bold]{username}[/bold].")
+        else:
+            error_msg = response.json().get("error", "Unknown error")
+            rich.print(f"[bold red]Login failed:[/bold red] {error_msg}")
+
+    except requests.exceptions.ConnectionError:
+        rich.print(f"[bold red]Error:[/bold red] Unable to connect to the server at {url}.")
+    
 
 @auth_app.command("logout")
 def logout():
-    rich.print("[bold red]AUTH LOGOUT[/bold red]")
+    if auth.get_token():
+        auth.delete_auth_data()
+        rich.print("[bold green]Logout successful.[/bold green] Local token has been removed.")
+    else:
+        rich.print("[yellow]You are already logged out.[/yellow]")
 
 @auth_app.command("whoami")
 def whoami():
-    rich.print("[bold blue]AUTH WHOAMI[/bold blue]")
-    rich.print("Current user: demo-user")
-
+    username = auth.get_username()
+    if not username:
+        rich.print("[bold red]You are not logged in.[/bold red] Run `oblak auth login`.")
+        return
+    rich.print(f"You are logged in as: [bold blue]{username}[/bold blue]")
+    
 
 @function_app.command("deploy")
 def deploy(
@@ -146,13 +179,17 @@ def execution_list():
 @config_app.command("show")
 def config_show():
     rich.print("[bold cyan]CONFIG SHOW[/bold cyan]")
-    rich.print("API URL: https://api.oblak.local")
-    rich.print("Profile: default")
+    rich.print(f"API URL: [bold]{auth.get_server_url()}[/bold]")
+
+    username = auth.get_username()
+    status = f"Authenticated ({username})" if username else "Not authenticated"
+    rich.print(f"Auth Status: {status}")
 
 @config_app.command("set-server")
 def config_set_server(url: str = typer.Argument(...),):
+    auth.set_server_url(url)
     rich.print("[bold green]CONFIG SET SERVER[/bold green]")
-    rich.print(f"New URL: {url}")
+    rich.print(f"API URL successfully set to: [bold]{url}[/bold]")
 
 def create_app() -> typer.Typer:
     return app   

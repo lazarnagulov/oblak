@@ -1,6 +1,6 @@
 
 
-from cli import create_app
+from .cli import create_app
 
 
 def main():

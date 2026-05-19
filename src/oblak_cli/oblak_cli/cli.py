@@ -81,6 +81,7 @@ def deploy(
     path: Path = typer.Argument(..., exists=True, help="Python file or project directory"),
     manifest: Optional[Path] = typer.Option(None, "--manifest", "-m", exists=True),
     requirements: Optional[Path] = typer.Option(None, "--requirements", "-r", exists=True),
+    name: Optional[str] = typer.Option(None, "--name", "-n"),
     handler: str = typer.Option("handler", "--handler", "-h"),
     runtime: str = typer.Option("python3.12", "--runtime"),
     timeout: int = typer.Option(5, "--timeout", min=1, max=30),
@@ -89,7 +90,7 @@ def deploy(
     rich.print(f"[yellow]Preparing deployment for {path.name}...[/yellow]")
 
     try:
-        manifest_data = oblak_manifest.get_or_create_manifest(path, manifest, runtime, handler, timeout, memory)
+        manifest_data = oblak_manifest.get_or_create_manifest(path, name, manifest, runtime, handler, timeout, memory)
         zip_buffer = oblak_manifest.build_zip_artifact(path, manifest_data, requirements)
     except ValueError as e:
         rich.print(f"[bold red]Packaging Error:[/bold red] {e}")
@@ -97,15 +98,11 @@ def deploy(
 
     form_data = {"manifest": json.dumps(manifest_data)}
     files = {"artifact": (f"{manifest_data['name']}.zip", zip_buffer, "application/zip")}
-    token = auth.get_token()
-    if not token:
-        rich.print("[bold red]Error:[/bold red] You are not logged in. Run `oblak auth login`.")
-        raise typer.Exit(1)
     
     try:
         response = requests.post(
             f"{auth.get_server_url()}/functions", 
-            headers={"Authorization": f"Bearer {token}"}, 
+            headers=auth.get_auth_headers(), 
             data=form_data, 
             files=files,
             timeout=30
@@ -122,23 +119,64 @@ def deploy(
     
 @function_app.command("list")
 def list_functions():
-    rich.print("[bold cyan]FUNCTION LIST[/bold cyan]")
+    rich.print("[bold cyan]Fetching your functions...[/bold cyan]")
+    url = f"{auth.get_server_url()}/functions"
+    
+    try:
+        response = requests.get(url, headers=auth.get_auth_headers(), timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        funcs = data.get("functions", [])
+        
+        if not funcs:
+            rich.print("[yellow]You have no deployed functions.[/yellow]")
+            return
 
-    table = Table(title="Functions")
+        table = Table(title="Your Functions")
+        table.add_column("Name", style="cyan")
+        table.add_column("Runtime", style="green")
 
-    table.add_column("Name")
-    table.add_column("Runtime")
-    table.add_column("Status")
+        for f in funcs:
+            table.add_row(f.get("name"), f.get("runtime"))
 
-    table.add_row("hello-world", "python3.12", "ACTIVE")
-    table.add_row("data-parser", "python3.12", "ACTIVE")
-
-    rich.print(table)
-
+        rich.print(table)
+        
+    except Exception as e:
+        rich.print(f"[bold red]Error:[/bold red] {e}")
+        
 @function_app.command("describe")
-def describe(function_name: str = typer.Argument(...),):
-    rich.print("[bold yellow]FUNCTION DESCRIBE[/bold yellow]")
-    rich.print(f"Function: {function_name}")
+def describe(function_name: str = typer.Argument(..., help="Name of the function")):
+    rich.print(f"[bold yellow]Fetching details for '{function_name}'...[/bold yellow]")
+    
+    try:
+        response = requests.get(
+            f"{auth.get_server_url()}/functions/{function_name}", 
+            headers=auth.get_auth_headers(), 
+            timeout=10
+        )
+        response.raise_for_status()
+        
+        f = response.json()
+        
+        table = Table(show_header=False)
+
+        table.add_column("Field", style="bold cyan")
+        table.add_column("Value")
+                
+        table.add_row("Name", str(f.get("name")))
+        table.add_row("Runtime", str(f.get("runtime")))
+        table.add_row("Module", str(f.get("module")))
+        table.add_row("Handler", str(f.get("handler")))
+        table.add_row("Memory", f"{f.get('memory')}MB")
+        table.add_row("Timeout", f"{f.get('timeout')}s")
+        table.add_row("Created at", str(f.get("created_at")))
+        
+        rich.print(table)
+    except requests.exceptions.HTTPError:
+        rich.print(f"[bold red]Error:[/bold red] Function '{function_name}' not found.")
+    except Exception as e:
+        rich.print(f"[bold red]Error:[/bold red] {e}")
 
 @function_app.command("delete")
 def delete(

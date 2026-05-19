@@ -56,3 +56,32 @@ func (h *Handler) Deploy(c *gin.Context) {
 	}
 	c.JSON(http.StatusCreated, gin.H{"message": "Function deployed successfully"})
 }
+
+func (h *Handler) List(c *gin.Context) {
+	userID := c.GetInt("userID")
+	funcs, err := h.service.ListByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch functions"})
+		return
+	}
+
+	var response []FunctionListResponse
+	for _, f := range funcs {
+		response = append(response, ToListResponse(&f))
+	}
+
+	c.JSON(http.StatusOK, gin.H{"functions": response})
+}
+
+func (h *Handler) Describe(c *gin.Context) {
+	name := c.Param("name")
+	userID := c.GetInt("userID")
+
+	f, err := h.service.GetByName(c.Request.Context(), userID, name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Function not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, ToResponse(f))
+}

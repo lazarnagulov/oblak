@@ -27,3 +27,39 @@ type Function struct {
 	Memory       int       `json:"memory_mb" db:"memory_mb"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }
+
+type FunctionResponse struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Runtime     string    `json:"runtime"`
+	ModuleName  string    `json:"module"`
+	HandlerName string    `json:"handler"`
+	Timeout     int       `json:"timeout"`
+	Memory      int       `json:"memory"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type FunctionListResponse struct {
+	Name    string `json:"name"`
+	Runtime string `json:"runtime"`
+}
+
+func ToListResponse(f *Function) FunctionListResponse {
+	return FunctionListResponse{
+		Name:    f.Name,
+		Runtime: f.Runtime,
+	}
+}
+
+func ToResponse(f *Function) FunctionResponse {
+	return FunctionResponse{
+		ID:          f.ID.String(),
+		Name:        f.Name,
+		Runtime:     f.Runtime,
+		ModuleName:  f.ModuleName,
+		HandlerName: f.HandlerName,
+		Timeout:     f.Timeout,
+		Memory:      f.Memory,
+		CreatedAt:   f.CreatedAt,
+	}
+}

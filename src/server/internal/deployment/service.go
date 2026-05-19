@@ -14,6 +14,8 @@ import (
 
 type Service interface {
 	Deploy(ctx context.Context, userID int, manifest DeployRequestManifest, artifactReader io.Reader) error
+	ListByUserID(ctx context.Context, userID int) ([]Function, error)
+	GetByName(ctx context.Context, userID int, name string) (*Function, error)
 }
 
 type service struct {
@@ -73,6 +75,14 @@ func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequest
 
 	s.log.Info("Function successfully deployed", zap.String("function_id", functionID.String()))
 	return nil
+}
+
+func (s *service) ListByUserID(ctx context.Context, userID int) ([]Function, error) {
+	return s.repo.ListByUserID(ctx, userID)
+}
+
+func (s *service) GetByName(ctx context.Context, userID int, name string) (*Function, error) {
+	return s.repo.GetByName(ctx, userID, name)
 }
 
 func (s *service) hashArtifact(tee io.Reader) (string, error) {

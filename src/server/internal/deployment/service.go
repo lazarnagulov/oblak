@@ -27,6 +27,14 @@ func NewService(storage ArtifactStorage, repo Repository, log *zap.Logger) Servi
 }
 
 func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequestManifest, artifactReader io.Reader) error {
+	exists, err := s.repo.Exists(ctx, userID, manifest.Name)
+	if err != nil {
+		s.log.Error("Database check failed", zap.Error(err))
+		return fmt.Errorf("database check failed")
+	}
+	if exists {
+		return ErrFunctionAlreadyExists
+	}
 	functionID := uuid.New()
 
 	var buf bytes.Buffer

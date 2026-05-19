@@ -2,19 +2,22 @@ package deployment
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazarnagulov/oblak/server/internal/auth"
 	"go.uber.org/zap"
 )
 
 type Handler struct {
-	service Service
-	log     *zap.Logger
+	service     Service
+	authService auth.Service
+	log         *zap.Logger
 }
 
-func NewHandler(service Service, log *zap.Logger) *Handler {
-	return &Handler{log: log}
+func NewHandler(service Service, authService auth.Service, log *zap.Logger) *Handler {
+	return &Handler{service: service, authService: authService, log: log}
 }
 
 func (h *Handler) Deploy(c *gin.Context) {
@@ -42,5 +45,14 @@ func (h *Handler) Deploy(c *gin.Context) {
 	defer fileContent.Close()
 
 	err = h.service.Deploy(c.Request.Context(), userID, manifest, fileContent)
+	if err != nil {
+		if errors.Is(err, ErrFunctionAlreadyExists) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		h.log.Error("Service deployment failed", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Deployment processing failed"})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{"message": "Function deployed successfully"})
 }

@@ -43,6 +43,11 @@ func setupDependencies(cfg *config.AppConfig, log *zap.Logger) (*Application, er
 	authHandler := auth.NewHandler(authService, log)
 	r.RegisterRoutes(authHandler)
 
+	deploymentRepo := deployment.NewRepository(database)
+	deploymentService := deployment.NewService(minioStorage, deploymentRepo, log)
+	deploymentHandler := deployment.NewHandler(deploymentService, authService, log)
+	r.RegisterRoutes(deploymentHandler)
+
 	return &Application{
 		DB:     database,
 		Router: r.Build(),

@@ -7,6 +7,7 @@ import (
 
 type Repository interface {
 	Create(ctx context.Context, f *Function) error
+	Exists(ctx context.Context, userID int, name string) (bool, error)
 }
 
 type sqlRepository struct {
@@ -27,4 +28,11 @@ func (r *sqlRepository) Create(ctx context.Context, f *Function) error {
 		f.ID, f.OwnerID, f.Name, f.Runtime, f.ModuleName, f.HandlerName, f.ArtifactHash, f.Timeout, f.Memory)
 
 	return err
+}
+
+func (r *sqlRepository) Exists(ctx context.Context, userID int, name string) (bool, error) {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM functions WHERE owner_id = $1 AND name = $2)`
+	err := r.db.QueryRowContext(ctx, query, userID, name).Scan(&exists)
+	return exists, err
 }

@@ -1,3 +1,6 @@
+import json
+import tomllib
+
 import requests
 from pathlib import Path
 from typing import Optional
@@ -7,7 +10,7 @@ import rich
 from rich.table import Table
 
 from . import auth
-
+from . import manifest as oblak_manifest
 
 app = typer.Typer(
     name="oblak",
@@ -75,30 +78,48 @@ def whoami():
 
 @function_app.command("deploy")
 def deploy(
-    path: Path = typer.Argument(..., exists=True),
-    requirements: Optional[Path] = typer.Option(
-        None,
-        "--requirements",
-        "-r",
-        exists=True,
-        help="Path to requirements.txt",
-    ),
-    name: Optional[str] = typer.Option(
-        None,
-        "--name",
-        "-n",
-        help="Function name",
-    ),
+    path: Path = typer.Argument(..., exists=True, help="Python file or project directory"),
+    manifest: Optional[Path] = typer.Option(None, "--manifest", "-m", exists=True),
+    requirements: Optional[Path] = typer.Option(None, "--requirements", "-r", exists=True),
+    handler: str = typer.Option("handler", "--handler", "-h"),
+    runtime: str = typer.Option("python3.12", "--runtime"),
+    timeout: int = typer.Option(5, "--timeout", min=1, max=30),
+    memory: int = typer.Option(128, "--memory", min=64, max=512),
 ):
-    rich.print("[bold green]FUNCTION DEPLOY[/bold green]")
-    rich.print(f"Path: {path}")
+    rich.print(f"[yellow]Preparing deployment for {path.name}...[/yellow]")
 
-    if requirements:
-        rich.print(f"Requirements: {requirements}")
+    try:
+        manifest_data = oblak_manifest.get_or_create_manifest(path, manifest, runtime, handler, timeout, memory)
+        zip_buffer = oblak_manifest.build_zip_artifact(path, manifest_data, requirements)
+    except ValueError as e:
+        rich.print(f"[bold red]Packaging Error:[/bold red] {e}")
+        raise typer.Exit(1)
 
-    if name:
-        rich.print(f"Function name: {name}")
-
+    form_data = {"manifest": json.dumps(manifest_data)}
+    files = {"artifact": (f"{manifest_data['name']}.zip", zip_buffer, "application/zip")}
+    token = auth.get_token()
+    if not token:
+        rich.print("[bold red]Error:[/bold red] You are not logged in. Run `oblak auth login`.")
+        raise typer.Exit(1)
+    
+    try:
+        response = requests.post(
+            f"{auth.get_server_url()}/functions", 
+            headers={"Authorization": f"Bearer {token}"}, 
+            data=form_data, 
+            files=files,
+            timeout=30
+        )
+        
+        if response.status_code in (200, 201):
+            rich.print("[bold green]Deployment successful![/bold green]")
+        else:
+            error_msg = response.json().get("error", response.text)
+            rich.print(f"[bold red]Deploy failed:[/bold red] {error_msg}")
+            
+    except requests.exceptions.RequestException as e:
+        rich.print(f"[bold red]Network Error:[/bold red] {e}")    
+    
 @function_app.command("list")
 def list_functions():
     rich.print("[bold cyan]FUNCTION LIST[/bold cyan]")

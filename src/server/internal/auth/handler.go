@@ -8,12 +8,12 @@ import (
 )
 
 type Handler struct {
-	authService Service
-	log         *zap.Logger
+	service Service
+	log     *zap.Logger
 }
 
-func NewHandler(authService Service, log *zap.Logger) *Handler {
-	return &Handler{authService: authService, log: log}
+func NewHandler(service Service, log *zap.Logger) *Handler {
+	return &Handler{service: service, log: log}
 }
 
 func (h *Handler) Login(c *gin.Context) {
@@ -23,7 +23,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authService.Login(c.Request.Context(), req.Username, req.Password, "CLIENT")
+	token, err := h.service.Login(c.Request.Context(), req.Username, req.Password, "CLIENT")
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return

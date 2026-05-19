@@ -14,6 +14,52 @@ CREATE TABLE IF NOT EXISTS api_keys (
     expires_at TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS functions (
+    id UUID PRIMARY KEY,
+    owner_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    runtime VARCHAR(50) NOT NULL,
+    module_name VARCHAR(100) NOT NULL,
+    handler_name VARCHAR(100) NOT NULL,
+    artifact_hash VARCHAR(64) NOT NULL,
+    timeout_seconds INT NOT NULL DEFAULT 5,
+    memory_mb INT NOT NULL DEFAULT 128,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(owner_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS executions (
+    id UUID PRIMARY KEY,
+    function_id UUID NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
+    status VARCHAR(30) NOT NULL,
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP,
+    exit_code INT,
+    execution_time_ms INT,
+    stdout_key TEXT,
+    stderr_key TEXT,
+    error_message TEXT,
+    wroker_node VARCHAR(100),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_ExecutionStatus CHECK (status IN (
+        'PENDING',
+        'RUNNING',
+        'SUCCESS',
+        'FAILED',
+        'TIMEOUT'
+    )) 
+);
+
+CREATE INDEX IF NOT EXISTS idx_functions_owner_id
+    ON functions(owner_id);
+
+CREATE INDEX IF NOT EXISTS idx_executions_status
+    ON executions(status);
+
+CREATE INDEX IF NOT EXISTS idx_executions_function_id
+    ON executions(function_id);
+
 INSERT INTO users (username, password_hash) 
 VALUES ('lazar', '$2a$10$wFRsfsXjMRaLaDN/wJ6AQuIIanU0v6Kk/QUpo0v5x.mWPy.KYTYgC')
 ON CONFLICT (username) DO NOTHING;

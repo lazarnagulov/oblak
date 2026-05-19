@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from typing import Optional
 
+import rich
+import typer
+
 CONFIG_DIR = Path.home() / ".oblak"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
@@ -37,6 +40,14 @@ def get_token() -> Optional[str]:
 
 def get_username() -> Optional[str]:
     return keyring.get_password(SERVICE_NAME, "current_active_user")
+
+def get_auth_headers() -> dict:
+    token = get_token()
+    if not token:
+        rich.print("[bold red]Error:[/bold red] You are not logged in. Run `oblak auth login`.")
+        raise typer.Exit(1)
+    
+    return {"Authorization": f"Bearer {token}"}
 
 def delete_auth_data():
     username = keyring.get_password(SERVICE_NAME, "current_active_user")

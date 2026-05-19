@@ -1,3 +1,6 @@
+import json
+import tomllib
+
 import requests
 from pathlib import Path
 from typing import Optional
@@ -7,7 +10,7 @@ import rich
 from rich.table import Table
 
 from . import auth
-
+from . import manifest as oblak_manifest
 
 app = typer.Typer(
     name="oblak",
@@ -75,64 +78,137 @@ def whoami():
 
 @function_app.command("deploy")
 def deploy(
-    path: Path = typer.Argument(..., exists=True),
-    requirements: Optional[Path] = typer.Option(
-        None,
-        "--requirements",
-        "-r",
-        exists=True,
-        help="Path to requirements.txt",
-    ),
-    name: Optional[str] = typer.Option(
-        None,
-        "--name",
-        "-n",
-        help="Function name",
-    ),
+    path: Path = typer.Argument(..., exists=True, help="Python file or project directory"),
+    manifest: Optional[Path] = typer.Option(None, "--manifest", "-m", exists=True),
+    requirements: Optional[Path] = typer.Option(None, "--requirements", "-r", exists=True),
+    name: Optional[str] = typer.Option(None, "--name", "-n"),
+    handler: str = typer.Option("handler", "--handler", "-h"),
+    runtime: str = typer.Option("python3.12", "--runtime"),
+    timeout: int = typer.Option(5, "--timeout", min=1, max=30),
+    memory: int = typer.Option(128, "--memory", min=64, max=512),
 ):
-    rich.print("[bold green]FUNCTION DEPLOY[/bold green]")
-    rich.print(f"Path: {path}")
+    rich.print(f"[yellow]Preparing deployment for {path.name}...[/yellow]")
 
-    if requirements:
-        rich.print(f"Requirements: {requirements}")
+    try:
+        manifest_data = oblak_manifest.get_or_create_manifest(path, name, manifest, runtime, handler, timeout, memory)
+        zip_buffer = oblak_manifest.build_zip_artifact(path, manifest_data, requirements)
+    except ValueError as e:
+        rich.print(f"[bold red]Packaging Error:[/bold red] {e}")
+        raise typer.Exit(1)
 
-    if name:
-        rich.print(f"Function name: {name}")
-
+    form_data = {"manifest": json.dumps(manifest_data)}
+    files = {"artifact": (f"{manifest_data['name']}.zip", zip_buffer, "application/zip")}
+    
+    try:
+        response = requests.post(
+            f"{auth.get_server_url()}/functions", 
+            headers=auth.get_auth_headers(), 
+            data=form_data, 
+            files=files,
+            timeout=30
+        )
+        
+        if response.status_code in (200, 201):
+            rich.print("[bold green]Deployment successful![/bold green]")
+        else:
+            error_msg = response.json().get("error", response.text)
+            rich.print(f"[bold red]Deploy failed:[/bold red] {error_msg}")
+            
+    except requests.exceptions.RequestException as e:
+        rich.print(f"[bold red]Network Error:[/bold red] {e}")    
+    
 @function_app.command("list")
 def list_functions():
-    rich.print("[bold cyan]FUNCTION LIST[/bold cyan]")
+    rich.print("[bold cyan]Fetching your functions...[/bold cyan]")
+    
+    try:
+        response = requests.get(
+            f"{auth.get_server_url()}/functions", 
+            headers=auth.get_auth_headers(), 
+            timeout=10
+        )
+        response.raise_for_status()
+        
+        data = response.json()
+        funcs = data.get("functions", [])
+        
+        if not funcs:
+            rich.print("[yellow]You have no deployed functions.[/yellow]")
+            return
 
-    table = Table(title="Functions")
+        table = Table(title="Your Functions")
+        table.add_column("Name", style="cyan")
+        table.add_column("Runtime", style="green")
 
-    table.add_column("Name")
-    table.add_column("Runtime")
-    table.add_column("Status")
+        for f in funcs:
+            table.add_row(f.get("name"), f.get("runtime"))
 
-    table.add_row("hello-world", "python3.12", "ACTIVE")
-    table.add_row("data-parser", "python3.12", "ACTIVE")
-
-    rich.print(table)
-
+        rich.print(table)
+        
+    except Exception as e:
+        rich.print(f"[bold red]Error:[/bold red] {e}")
+        
 @function_app.command("describe")
-def describe(function_name: str = typer.Argument(...),):
-    rich.print("[bold yellow]FUNCTION DESCRIBE[/bold yellow]")
-    rich.print(f"Function: {function_name}")
+def describe(function_name: str = typer.Argument(..., help="Name of the function")):
+    rich.print(f"[bold yellow]Fetching details for '{function_name}'...[/bold yellow]")
+    
+    try:
+        response = requests.get(
+            f"{auth.get_server_url()}/functions/{function_name}", 
+            headers=auth.get_auth_headers(), 
+            timeout=10
+        )
+        response.raise_for_status()
+        
+        f = response.json()
+        
+        table = Table(show_header=False)
+
+        table.add_column("Field", style="bold cyan")
+        table.add_column("Value")
+                
+        table.add_row("Name", str(f.get("name")))
+        table.add_row("Runtime", str(f.get("runtime")))
+        table.add_row("Module", str(f.get("module")))
+        table.add_row("Handler", str(f.get("handler")))
+        table.add_row("Memory", f"{f.get('memory')}MB")
+        table.add_row("Timeout", f"{f.get('timeout')}s")
+        table.add_row("Created at", str(f.get("created_at")))
+        
+        rich.print(table)
+    except requests.exceptions.HTTPError:
+        rich.print(f"[bold red]Error:[/bold red] Function '{function_name}' not found.")
+    except Exception as e:
+        rich.print(f"[bold red]Error:[/bold red] {e}")
 
 @function_app.command("delete")
 def delete(
-    function_name: str = typer.Argument(...),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Delete without confirmation",
-    ),
+    function_name: str = typer.Argument(..., help="Name of the function"),
 ):
-    rich.print("[bold red]FUNCTION DELETE[/bold red]")
-    rich.print(f"Function: {function_name}")
-    rich.print(f"Force: {force}")
+    rich.print(f"[yellow]Deleting '{function_name}'...[/yellow]")
 
+    try:
+        response = requests.delete(
+            f"{auth.get_server_url()}/functions/{function_name}",
+            headers=auth.get_auth_headers(),
+            timeout=10,
+        )
+        response.raise_for_status()
+        rich.print("[bold green]Delete successful.[/bold green]")
+    except requests.exceptions.HTTPError:
+        if response.status_code == 404:
+            rich.print(
+                f"[bold red]Delete failed:[/bold red] "
+                f"Function '{function_name}' not found."
+            )
+        else:
+            rich.print(
+                f"[bold red]Delete failed:[/bold red] "
+                f"{response.text}"
+            )
+    except requests.exceptions.RequestException as e:
+        rich.print(f"[bold red]Network Error:[/bold red] {e}")
+    
 @function_app.command("scan-results")
 def scan_results(function_name: str = typer.Argument(...),):
     rich.print("[bold magenta]FUNCTION SCAN RESULTS[/bold magenta]")

@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  postgres_db:
+    image: postgres:16-alpine
+    container_name: oblak_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-admin-sifra}
+      POSTGRES_DB: ${DB_NAME:-baza}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  postgres_data:

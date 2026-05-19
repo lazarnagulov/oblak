@@ -10,6 +10,7 @@ type Repository interface {
 	Exists(ctx context.Context, userID int, name string) (bool, error)
 	ListByUserID(ctx context.Context, userID int) ([]Function, error)
 	GetByName(ctx context.Context, userID int, name string) (*Function, error)
+	Delete(ctx context.Context, userID int, name string) (string, error)
 }
 
 type sqlRepository struct {
@@ -70,4 +71,21 @@ func (r *sqlRepository) GetByName(ctx context.Context, userID int, name string) 
 		return nil, err
 	}
 	return f, nil
+}
+
+func (r *sqlRepository) Delete(ctx context.Context, userID int, name string) (string, error) {
+	var functionID string
+	querySelect := `SELECT id FROM functions WHERE owner_id = $1 AND name = $2`
+	err := r.db.QueryRowContext(ctx, querySelect, userID, name).Scan(&functionID)
+	if err != nil {
+		return "", err
+	}
+
+	queryDelete := `DELETE FROM functions WHERE owner_id = $1 AND name = $2`
+	_, err = r.db.ExecContext(ctx, queryDelete, userID, name)
+	if err != nil {
+		return "", err
+	}
+
+	return functionID, nil
 }

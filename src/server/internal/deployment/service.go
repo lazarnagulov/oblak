@@ -16,6 +16,7 @@ type Service interface {
 	Deploy(ctx context.Context, userID int, manifest DeployRequestManifest, artifactReader io.Reader) error
 	ListByUserID(ctx context.Context, userID int) ([]Function, error)
 	GetByName(ctx context.Context, userID int, name string) (*Function, error)
+	Delete(ctx context.Context, userID int, name string) error
 }
 
 type service struct {
@@ -83,6 +84,21 @@ func (s *service) ListByUserID(ctx context.Context, userID int) ([]Function, err
 
 func (s *service) GetByName(ctx context.Context, userID int, name string) (*Function, error) {
 	return s.repo.GetByName(ctx, userID, name)
+}
+
+func (s *service) Delete(ctx context.Context, userID int, name string) error {
+	functionID, err := s.repo.Delete(ctx, userID, name)
+	if err != nil {
+		return err
+	}
+
+	storageKey := fmt.Sprintf("functions/%d/%s.zip", userID, functionID)
+	err = s.storage.Delete(ctx, storageKey)
+	if err != nil {
+		s.log.Error("Failed to delete artifact from storage", zap.Error(err), zap.String("key", storageKey))
+	}
+
+	return nil
 }
 
 func (s *service) hashArtifact(tee io.Reader) (string, error) {

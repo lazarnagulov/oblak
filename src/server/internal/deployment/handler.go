@@ -1,6 +1,7 @@
 package deployment
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -84,4 +85,21 @@ func (h *Handler) Describe(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ToResponse(f))
+}
+
+func (h *Handler) Delete(c *gin.Context) {
+	name := c.Param("name")
+	userID := c.GetInt("userID")
+
+	err := h.service.Delete(c.Request.Context(), userID, name)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Function not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete function"})
+		return
+	}
+
+	c.JSON(http.StatusNoContent, gin.H{"message": "Function deleted successfully"})
 }

@@ -120,10 +120,13 @@ def deploy(
 @function_app.command("list")
 def list_functions():
     rich.print("[bold cyan]Fetching your functions...[/bold cyan]")
-    url = f"{auth.get_server_url()}/functions"
     
     try:
-        response = requests.get(url, headers=auth.get_auth_headers(), timeout=10)
+        response = requests.get(
+            f"{auth.get_server_url()}/functions", 
+            headers=auth.get_auth_headers(), 
+            timeout=10
+        )
         response.raise_for_status()
         
         data = response.json()
@@ -180,18 +183,32 @@ def describe(function_name: str = typer.Argument(..., help="Name of the function
 
 @function_app.command("delete")
 def delete(
-    function_name: str = typer.Argument(...),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Delete without confirmation",
-    ),
+    function_name: str = typer.Argument(..., help="Name of the function"),
 ):
-    rich.print("[bold red]FUNCTION DELETE[/bold red]")
-    rich.print(f"Function: {function_name}")
-    rich.print(f"Force: {force}")
+    rich.print(f"[yellow]Deleting '{function_name}'...[/yellow]")
 
+    try:
+        response = requests.delete(
+            f"{auth.get_server_url()}/functions/{function_name}",
+            headers=auth.get_auth_headers(),
+            timeout=10,
+        )
+        response.raise_for_status()
+        rich.print("[bold green]Delete successful.[/bold green]")
+    except requests.exceptions.HTTPError:
+        if response.status_code == 404:
+            rich.print(
+                f"[bold red]Delete failed:[/bold red] "
+                f"Function '{function_name}' not found."
+            )
+        else:
+            rich.print(
+                f"[bold red]Delete failed:[/bold red] "
+                f"{response.text}"
+            )
+    except requests.exceptions.RequestException as e:
+        rich.print(f"[bold red]Network Error:[/bold red] {e}")
+    
 @function_app.command("scan-results")
 def scan_results(function_name: str = typer.Argument(...),):
     rich.print("[bold magenta]FUNCTION SCAN RESULTS[/bold magenta]")

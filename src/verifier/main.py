@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import io
+import os
 import json
 import logging
 import struct
@@ -109,16 +110,16 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
 async def main():
   # WINDOWS (TCP)
-  server = await asyncio.start_server(handle_client, host=HOST, port=PORT)
-  log.info("Verifier listening on %s:%d", HOST, PORT)
+  # server = await asyncio.start_server(handle_client, host=HOST, port=PORT)
+  # log.info("Verifier listening on %s:%d", HOST, PORT)
 
   # LINUX (Unix socket)
-  # SOCKET_PATH = "/tmp/oblak_verifier.sock"
-  # if os.path.exists(SOCKET_PATH):
-  #   os.remove(SOCKET_PATH)
-  # server = await asyncio.start_unix_server(handle_client, path=SOCKET_PATH)
-  # os.chmod(SOCKET_PATH, 0o600)
-  # log.info("Verifier listening on %s", SOCKET_PATH)
+  SOCKET_PATH = "/tmp/oblak_verifier.sock"
+  if os.path.exists(SOCKET_PATH):
+    os.remove(SOCKET_PATH)
+  server = await asyncio.start_unix_server(handle_client, path=SOCKET_PATH)
+  os.chmod(SOCKET_PATH, 0o600)
+  log.info("Verifier listening on %s", SOCKET_PATH)
 
   async with server:
     await server.serve_forever()

@@ -1,0 +1,2 @@
+requests==2.31.0
+totally-fake-package-xyz123==1.0.0

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"time"
 )
 
@@ -25,11 +26,14 @@ type verifierResponse struct {
 
 func VerifyArtifact(ctx context.Context, artifactBytes []byte, manifest DeployRequestManifest) (bool, string, error) {
 	dialer := net.Dialer{Timeout: 5 * time.Second}
-	// WINDOWS
-	// conn, err := dialer.DialContext(ctx, "tcp", "127.0.0.1:9876")
 
-	// LINUX
-	conn, err := dialer.DialContext(ctx, "unix", verifierSocketPath)
+	var conn net.Conn
+	var err error
+	if runtime.GOOS == "linux" {
+		conn, err = dialer.DialContext(ctx, "unix", verifierSocketPath)
+	} else {
+		conn, err = dialer.DialContext(ctx, "tcp", "127.0.0.1:9876")
+	}
 
 	if err != nil {
 		return false, "", fmt.Errorf("could not connect to verifier: %w", err)

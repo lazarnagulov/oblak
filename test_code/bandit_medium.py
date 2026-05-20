@@ -1,6 +1,5 @@
 import hashlib
 
 def handler(event):
-    password = "supersecret123"
-    token = hashlib.md5(password.encode()).hexdigest()
-    return {"token": token}
+    data = event.get("data", "").encode()
+    return {"hash": hashlib.md5(data).hexdigest()}

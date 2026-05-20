@@ -33,7 +33,6 @@ async def write_message(writer: asyncio.StreamWriter, payload: dict):
   writer.write(struct.pack(">I", len(data)) + data)
   await writer.drain()
 
-
 def run_checks(artifact_bytes: bytes) -> VerifyResponse:
   try:
     zf = zipfile.ZipFile(io.BytesIO(artifact_bytes))
@@ -42,39 +41,27 @@ def run_checks(artifact_bytes: bytes) -> VerifyResponse:
 
   all_results: list[CheckResult] = []
 
-  # 1. Zip safety checks
-  zip_results = zip_safety.run(zf)
-  all_results.extend(zip_results)
-  for r in zip_results:
-    if not r.passed:
-      return VerifyResponse(safe=False, reason=r.reason, checks=all_results)
-    
-  # 2. AST pattern check
-  pattern_result = pattern_check.run(zf)
-  all_results.append(pattern_result)
-  if not pattern_result.passed:
-    return VerifyResponse(safe=False, reason=pattern_result.reason, checks=all_results)
-  
-  # 3. Bandit static analysis
-  bandit_result = bandit_check.run(zf)
-  all_results.append(bandit_result)
-  if not bandit_result.passed:
-    return VerifyResponse(safe=False, reason=bandit_result.reason, checks=all_results)
-  
-  # 4. Requirements check
-  req_result = requirements_check.run(zf)
-  all_results.append(req_result)
-  if not req_result.passed:
-    return VerifyResponse(safe=False, reason=req_result.reason, checks=all_results)
-  
-  # 5. LLM check
-  llm_result = llm_check.run(zf)
-  all_results.append(llm_result)
-  if not llm_result.passed:
-    return VerifyResponse(safe=False, reason=llm_result.reason, checks=all_results)
+  checks = [
+    zip_safety,
+    pattern_check,
+    bandit_check,
+    requirements_check,
+    llm_check,
+  ]
+
+  for check in checks:
+    results = check.run(zf)
+    if isinstance(results, list):
+      all_results.extend(results)
+    else:
+      results = [results]
+      all_results.extend(results)
+
+    for r in results:
+      if not r.passed:
+        return VerifyResponse(safe=False, reason=r.reason, checks=all_results)
 
   return VerifyResponse(safe=True, checks=all_results)
-
 
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
   log.info("New connection")
@@ -110,16 +97,16 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
 async def main():
   # WINDOWS (TCP)
-  # server = await asyncio.start_server(handle_client, host=HOST, port=PORT)
-  # log.info("Verifier listening on %s:%d", HOST, PORT)
+  server = await asyncio.start_server(handle_client, host=HOST, port=PORT)
+  log.info("Verifier listening on %s:%d", HOST, PORT)
 
   # LINUX (Unix socket)
-  SOCKET_PATH = "/tmp/oblak_verifier.sock"
-  if os.path.exists(SOCKET_PATH):
-    os.remove(SOCKET_PATH)
-  server = await asyncio.start_unix_server(handle_client, path=SOCKET_PATH)
-  os.chmod(SOCKET_PATH, 0o600)
-  log.info("Verifier listening on %s", SOCKET_PATH)
+  # SOCKET_PATH = "/tmp/oblak_verifier.sock"
+  # if os.path.exists(SOCKET_PATH):
+  #   os.remove(SOCKET_PATH)
+  # server = await asyncio.start_unix_server(handle_client, path=SOCKET_PATH)
+  # os.chmod(SOCKET_PATH, 0o600)
+  # log.info("Verifier listening on %s", SOCKET_PATH)
 
   async with server:
     await server.serve_forever()

@@ -7,7 +7,7 @@ import os
 import struct
 import zipfile
 
-from checks import zip_safety, pattern_check, bandit_check
+from checks import zip_safety, pattern_check, bandit_check, requirements_check
 from models import CheckResult, VerifyRequest, VerifyResponse
 
 HOST = "127.0.0.1"
@@ -60,6 +60,12 @@ def run_checks(artifact_bytes: bytes) -> VerifyResponse:
   all_results.append(bandit_result)
   if not bandit_result.passed:
     return VerifyResponse(safe=False, reason=bandit_result.reason, checks=all_results)
+  
+  # 4. Requirements check
+  req_result = requirements_check.run(zf)
+  all_results.append(req_result)
+  if not req_result.passed:
+    return VerifyResponse(safe=False, reason=req_result.reason, checks=all_results)
 
   return VerifyResponse(safe=True, checks=all_results)
 

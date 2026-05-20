@@ -51,6 +51,11 @@ func (h *Handler) Deploy(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
+		var verifyErr *ErrVerificationFailed
+		if errors.As(err, &verifyErr) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": verifyErr.Error()})
+			return
+		}
 		h.log.Error("Service deployment failed", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Deployment processing failed"})
 		return

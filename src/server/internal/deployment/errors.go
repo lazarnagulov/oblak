@@ -1,5 +1,16 @@
 package deployment
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var ErrFunctionAlreadyExists = errors.New("a function with this name already exists for this user")
+
+type ErrVerificationFailed struct {
+	Reason string
+}
+
+func (e *ErrVerificationFailed) Error() string {
+	return fmt.Sprintf("Artifact failed security verification: %s", e.Reason)
+}

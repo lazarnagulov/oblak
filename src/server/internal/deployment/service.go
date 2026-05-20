@@ -38,17 +38,32 @@ func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequest
 	if exists {
 		return ErrFunctionAlreadyExists
 	}
-	functionID := uuid.New()
 
 	var buf bytes.Buffer
-	tee := io.TeeReader(artifactReader, &buf)
-	artifactHash, err := s.hashArtifact(tee)
+	if _, err := io.Copy(&buf, artifactReader); err != nil {
+		return fmt.Errorf("failed to buffer artifact")
+	}
+	artifactBytes := buf.Bytes()
+
+	// Verification
+	safe, reason, err := VerifyArtifact(ctx, artifactBytes, manifest)
+	if err != nil {
+		s.log.Error("Verifier unreachable", zap.Error(err))
+		return fmt.Errorf("verification service unavailable")
+	}
+	if !safe {
+		s.log.Warn("Artifact rejected", zap.String("reason", reason))
+		return &ErrVerificationFailed{Reason: reason}
+	}
+
+	artifactHash, err := s.hashArtifact(bytes.NewReader(artifactBytes))
 	if err != nil {
 		return err
 	}
 
+	functionID := uuid.New()
 	storageKey := fmt.Sprintf("functions/%d/%s.zip", userID, functionID.String())
-	err = s.storage.Upload(ctx, storageKey, &buf)
+	err = s.storage.Upload(ctx, storageKey, bytes.NewReader(artifactBytes))
 	if err != nil {
 		s.log.Error("Failed to upload artifact to storage", zap.Error(err))
 		return fmt.Errorf("storage upload failed")
@@ -67,7 +82,6 @@ func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequest
 	}
 
 	err = s.repo.Create(ctx, dbFunc)
-
 	if err != nil {
 		_ = s.storage.Delete(context.Background(), storageKey)
 		s.log.Error("Failed to save function metadata", zap.Error(err))

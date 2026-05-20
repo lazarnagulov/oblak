@@ -3,11 +3,10 @@ import base64
 import io
 import json
 import logging
-import os
 import struct
 import zipfile
 
-from checks import zip_safety, pattern_check, bandit_check, requirements_check
+from checks import zip_safety, pattern_check, bandit_check, requirements_check, llm_check
 from models import CheckResult, VerifyRequest, VerifyResponse
 
 HOST = "127.0.0.1"
@@ -66,6 +65,12 @@ def run_checks(artifact_bytes: bytes) -> VerifyResponse:
   all_results.append(req_result)
   if not req_result.passed:
     return VerifyResponse(safe=False, reason=req_result.reason, checks=all_results)
+  
+  # 5. LLM check
+  llm_result = llm_check.run(zf)
+  all_results.append(llm_result)
+  if not llm_result.passed:
+    return VerifyResponse(safe=False, reason=llm_result.reason, checks=all_results)
 
   return VerifyResponse(safe=True, checks=all_results)
 

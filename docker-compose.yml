@@ -27,7 +27,35 @@ services:
       command: server /data --console-address ":9001"
       volumes:
         - minio_data:/data
+  ollama:
+      image: ollama/ollama
+      ports:
+        - "11434:11434"
+      volumes:
+        - ollama_data:/root/.ollama
+      restart: unless-stopped
+  ollama-init:
+      image: ollama/ollama
+      depends_on:
+        - ollama
+      volumes:
+        - ollama_data:/root/.ollama
+      entrypoint: >
+        sh -c "
+          echo 'Waiting for Ollama...' &&
+          until ollama list > /dev/null 2>&1; do
+            echo 'Ollama not ready, retrying...' &&
+            sleep 3;
+          done &&
+          echo 'Ollama ready, pulling model...' &&
+          ollama pull qwen2.5-coder:1.5b &&
+          echo 'Done!'
+        "
+      environment:
+        - OLLAMA_HOST=http://ollama:11434
+      restart: no
 
 volumes:
   postgres_data:
   minio_data:
+  ollama_data:

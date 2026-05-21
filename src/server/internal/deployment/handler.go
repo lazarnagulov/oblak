@@ -28,6 +28,25 @@ func NewHandler(service Service, authService auth.Service, rateLimit limiter.Lim
 	}
 }
 
+// Deploy uploads a new function artifact, verifies and registers it.
+// @Summary Deploy a new function
+// @Description Uploads a function artifact (ZIP), verifies and registers it in the system.
+// @Tags functions
+// @Security BearerAuth
+// @Accept multipart/form-data
+// @Produce json
+// @Param name formData string true "Name of the function"
+// @Param runtime formData string true "Runtime environment (e.g., python3.10)"
+// @Param module formData string true "Module name"
+// @Param handler formData string true "Handler entrypoint (e.g., main.handler)"
+// @Param timeout formData int true "Execution timeout in seconds (1-30)"
+// @Param memory formData int true "Allocated memory in MB (64-512)"
+// @Param file formData file true "Function ZIP artifact"
+// @Success 200 {object} deployment.FunctionResponse "Function deployed successfully"
+// @Failure 400 {object} map[string]string "Invalid request or file"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 429 {object} map[string]string "Rate limit exceeded"
+// @Failure 500 {object} map[string]string "Internal server error"
 func (h *Handler) Deploy(c *gin.Context) {
 	userID := c.GetInt("userID")
 	mainfestJSON := c.PostForm("manifest")
@@ -70,6 +89,17 @@ func (h *Handler) Deploy(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Function deployed successfully"})
 }
 
+// List retrieves all deployed functions for the authenticated user.
+// @Summary List functions
+// @Description Retrieves a list of all deployed functions belonging to the authenticated user.
+// @Tags functions
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} deployment.FunctionListResponse "List of functions"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 429 {object} map[string]string "Rate limit exceeded"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /functions/ [get]
 func (h *Handler) List(c *gin.Context) {
 	userID := c.GetInt("userID")
 	funcs, err := h.service.ListByUserID(c.Request.Context(), userID)
@@ -86,6 +116,18 @@ func (h *Handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"functions": response})
 }
 
+// Describe retrieves detailed information about a specific function.
+// @Summary Get function details
+// @Description Retrieves detailed information about a specific function by its name.
+// @Tags functions
+// @Security BearerAuth
+// @Produce json
+// @Param name path string true "Function name"
+// @Success 200 {object} deployment.FunctionResponse "Function details"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Function not found"
+// @Failure 429 {object} map[string]string "Rate limit exceeded"
+// @Router /functions/{name} [get]
 func (h *Handler) Describe(c *gin.Context) {
 	name := c.Param("name")
 	userID := c.GetInt("userID")
@@ -99,6 +141,19 @@ func (h *Handler) Describe(c *gin.Context) {
 	c.JSON(http.StatusOK, ToResponse(f))
 }
 
+// Delete completely removes a function and its artifact.
+// @Summary Delete a function
+// @Description Deletes a function from the database and removes its artifact from the storage.
+// @Tags functions
+// @Security BearerAuth
+// @Produce json
+// @Param name path string true "Function name"
+// @Success 200 {object} map[string]string "Success message"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Function not found"
+// @Failure 429 {object} map[string]string "Rate limit exceeded"
+// @Failure 500 {object} map[string]string "Failed to delete artifact or database record"
+// @Router /functions/{name} [delete]
 func (h *Handler) Delete(c *gin.Context) {
 	name := c.Param("name")
 	userID := c.GetInt("userID")

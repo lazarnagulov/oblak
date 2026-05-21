@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	_ "github.com/lazarnagulov/oblak/server/docs"
 	"github.com/lazarnagulov/oblak/server/internal/auth"
 	"github.com/lazarnagulov/oblak/server/internal/config"
 	"github.com/lazarnagulov/oblak/server/internal/deployment"
@@ -40,7 +41,7 @@ func setupDependencies(cfg *config.AppConfig, log *zap.Logger) (*Application, er
 	limiter := limiter.NewInMemoryLimiter()
 	limitHandler := httputil.NewRateLimiterHandler(limiter, cfg.RateLimits, log)
 
-	r := NewRouter(log)
+	r := NewRouter(cfg.Env, log)
 
 	authRepo := auth.NewRepository(database)
 	authService := auth.NewService(authRepo, log)

@@ -22,6 +22,18 @@ func NewHandler(service Service, rateLimit limiter.LimitHandler, log *zap.Logger
 	}
 }
 
+// Login authenticates a user and returns a JWT token.
+// @Summary User login
+// @Description Authenticates a user using credentials and returns an API token.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body auth.LoginRequest true "User credentials"
+// @Success 200 {object} auth.LoginResponse "Successful login"
+// @Failure 400 {object} map[string]string "Invalid request payload"
+// @Failure 401 {object} map[string]string "Invalid credentials"
+// @Failure 429 {object} map[string]string "Rate limit exceeded"
+// @Router /auth/login [post]
 func (h *Handler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -35,9 +47,9 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"token":    token,
-		"username": req.Username,
+	c.JSON(http.StatusOK, LoginResponse{
+		Token:    token,
+		Username: req.Username,
 	})
 
 }

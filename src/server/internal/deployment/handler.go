@@ -8,17 +8,24 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazarnagulov/oblak/server/internal/auth"
+	"github.com/lazarnagulov/oblak/server/internal/platform/limiter"
 	"go.uber.org/zap"
 )
 
 type Handler struct {
 	service     Service
 	authService auth.Service
+	rateLimit   limiter.LimitHandler
 	log         *zap.Logger
 }
 
-func NewHandler(service Service, authService auth.Service, log *zap.Logger) *Handler {
-	return &Handler{service: service, authService: authService, log: log}
+func NewHandler(service Service, authService auth.Service, rateLimit limiter.LimitHandler, log *zap.Logger) *Handler {
+	return &Handler{
+		service:     service,
+		authService: authService,
+		rateLimit:   rateLimit,
+		log:         log,
+	}
 }
 
 func (h *Handler) Deploy(c *gin.Context) {

@@ -26,20 +26,14 @@ func NewPostgresConnection(cfg Config, log *zap.Logger) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
 
-	log.Info(dsn)
-
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	var pingErr error
-	for i := 0; i < 5; i++ {
-		log.Info("Attempting to ping database...", zap.Int("attempt", i+1))
-		if pingErr = db.Ping(); pingErr == nil {
-			log.Info("Successfully connected to the database!")
-			return db, nil
-		}
-		time.Sleep(2 * time.Second)
+	if pingErr = db.Ping(); pingErr == nil {
+		log.Info("Successfully connected to the database!")
+		return db, nil
 	}
 
 	return nil, fmt.Errorf("database unreachable after retries: %w", pingErr)

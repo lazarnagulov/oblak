@@ -9,10 +9,10 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	funcs := rg.Group("/functions")
 	funcs.Use(httputil.RequireAPIKey(h.authService, h.log))
 	{
-		funcs.POST("/", h.Deploy)
-		funcs.GET("/", h.List)
-		funcs.GET("/:name", h.Describe)
-		funcs.DELETE("/:name", h.Delete)
+		funcs.POST("/", h.rateLimit("deploy"), h.Deploy)
+		funcs.GET("/", h.rateLimit("list_functions"), h.List)
+		funcs.GET("/:name", h.rateLimit("describe_function"), h.Describe)
+		funcs.DELETE("/:name", h.rateLimit("delete_function"), h.Delete)
 		// funcs.POST("/:name/invoke", h.Invoke)
 	}
 }

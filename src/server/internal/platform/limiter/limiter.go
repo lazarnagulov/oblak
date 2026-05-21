@@ -1,6 +1,12 @@
 package limiter
 
-import "context"
+import (
+	"context"
+
+	"github.com/gin-gonic/gin"
+)
+
+type LimitHandler func(string) gin.HandlerFunc
 
 type RateLimiterConfig struct {
 	Capacity int

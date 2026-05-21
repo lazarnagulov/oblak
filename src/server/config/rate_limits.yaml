@@ -1,0 +1,19 @@
+rate_limits:
+  login:
+    capacity: 5
+    refill: 0.05
+  deploy:
+    capacity: 5
+    refill: 0.01
+  list_functions:
+    capacity: 100
+    refill: 5.0
+  describe_function:
+    capacity: 100
+    refill: 5.0
+  delete_function:
+    capacity: 20
+    refill: 1.0
+  default:
+    capacity: 30
+    refill: 1.0

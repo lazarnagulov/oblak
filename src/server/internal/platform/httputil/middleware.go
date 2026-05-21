@@ -1,12 +1,14 @@
 package httputil
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazarnagulov/oblak/server/internal/auth"
+	"github.com/lazarnagulov/oblak/server/internal/platform/limiter"
 	"go.uber.org/zap"
 )
 
@@ -34,6 +36,39 @@ func RequireAPIKey(authService auth.Service, log *zap.Logger) gin.HandlerFunc {
 		}
 
 		c.Set("userID", userID)
+		c.Next()
+	}
+}
+
+func RateLimit(limiter limiter.RateLimiter, endpoint string, cfg limiter.RateLimiterConfig, log *zap.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var identifer string
+		if userID, exists := c.Get("userID"); exists {
+			identifer = fmt.Sprintf("user:%v", userID)
+		} else {
+			identifer = fmt.Sprintf("ip:%s", c.ClientIP())
+		}
+
+		key := fmt.Sprintf("%s_%s", endpoint, identifer)
+
+		allowed, err := limiter.Allow(c, key, cfg)
+		if err != nil {
+			log.Warn(
+				"Rate limiter temporarily unavailable, request may not be limited",
+				zap.Error(err),
+				zap.String("ip", c.ClientIP()),
+			)
+			c.Next()
+			return
+		}
+
+		if !allowed {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+				"error": "Rate limit exceeded for this action",
+			})
+			return
+		}
+
 		c.Next()
 	}
 }

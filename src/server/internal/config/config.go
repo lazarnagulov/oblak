@@ -40,7 +40,7 @@ func Load(log *zap.Logger) *AppConfig {
 			AccessKey:  getEnv("MINIO_ACCESS_KEY", "oblak_admin"),
 			SecretKey:  getEnv("MINIO_SECRET_KEY", "oblak_super_secret_password"),
 			BucketName: "oblak-artifacts",
-			UseSSL:     false,
+			UseSSL:     getEnv("MINIO_USE_SSL", "") == "true",
 		},
 	}
 }

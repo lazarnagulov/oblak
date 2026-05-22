@@ -1,47 +1,70 @@
 basePath: /api/v1
 definitions:
-  auth.LoginRequest:
+  ErrorResponse:
+    properties:
+      code:
+        type: integer
+      error:
+        type: string
+    type: object
+  FunctionListResponse:
+    properties:
+      name:
+        example: my-api-handler
+        type: string
+      runtime:
+        example: python3.10
+        type: string
+    type: object
+  FunctionResponse:
+    properties:
+      created_at:
+        example: "2026-05-22T12:00:00Z"
+        type: string
+      handler:
+        example: handler
+        type: string
+      id:
+        example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+        type: string
+      memory:
+        example: 128
+        type: integer
+      module:
+        example: main
+        type: string
+      name:
+        example: my-api-handler
+        type: string
+      runtime:
+        example: python3.10
+        type: string
+      timeout:
+        example: 10
+        type: integer
+    type: object
+  LoginRequest:
     properties:
       password:
+        description: '@Param password example true "supersecure123"'
+        example: supersecure123
         type: string
       username:
+        description: '@Param username example true "john"'
+        example: john
         type: string
     required:
     - password
     - username
     type: object
-  auth.LoginResponse:
+  LoginResponse:
     properties:
       token:
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         type: string
       username:
+        example: john
         type: string
-    type: object
-  deployment.FunctionListResponse:
-    properties:
-      name:
-        type: string
-      runtime:
-        type: string
-    type: object
-  deployment.FunctionResponse:
-    properties:
-      created_at:
-        type: string
-      handler:
-        type: string
-      id:
-        type: string
-      memory:
-        type: integer
-      module:
-        type: string
-      name:
-        type: string
-      runtime:
-        type: string
-      timeout:
-        type: integer
     type: object
 host: localhost:8080
 info:
@@ -61,32 +84,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/auth.LoginRequest'
+          $ref: '#/definitions/LoginRequest'
       produces:
       - application/json
       responses:
         "200":
           description: Successful login
           schema:
-            $ref: '#/definitions/auth.LoginResponse'
+            $ref: '#/definitions/LoginResponse'
         "400":
           description: Invalid request payload
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "401":
           description: Invalid credentials
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "429":
           description: Rate limit exceeded
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
       summary: User login
       tags:
       - auth
@@ -101,26 +118,20 @@ paths:
           description: List of functions
           schema:
             items:
-              $ref: '#/definitions/deployment.FunctionListResponse'
+              $ref: '#/definitions/FunctionListResponse'
             type: array
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "429":
           description: Rate limit exceeded
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
       security:
       - BearerAuth: []
       summary: List functions
@@ -142,33 +153,23 @@ paths:
         "200":
           description: Success message
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "404":
           description: Function not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "429":
           description: Rate limit exceeded
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "500":
           description: Failed to delete artifact or database record
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
       security:
       - BearerAuth: []
       summary: Delete a function
@@ -189,25 +190,19 @@ paths:
         "200":
           description: Function details
           schema:
-            $ref: '#/definitions/deployment.FunctionResponse'
+            $ref: '#/definitions/FunctionResponse'
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "404":
           description: Function not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
         "429":
           description: Rate limit exceeded
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get function details

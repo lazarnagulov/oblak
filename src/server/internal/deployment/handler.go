@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazarnagulov/oblak/server/internal/auth"
+	"github.com/lazarnagulov/oblak/server/internal/platform/httputil"
 	"github.com/lazarnagulov/oblak/server/internal/platform/limiter"
 	"go.uber.org/zap"
 )
@@ -42,31 +43,31 @@ func NewHandler(service Service, authService auth.Service, rateLimit limiter.Lim
 // @Param timeout formData int true "Execution timeout in seconds (1-30)"
 // @Param memory formData int true "Allocated memory in MB (64-512)"
 // @Param file formData file true "Function ZIP artifact"
-// @Success 200 {object} deployment.FunctionResponse "Function deployed successfully"
-// @Failure 400 {object} map[string]string "Invalid request or file"
-// @Failure 401 {object} map[string]string "Unauthorized"
-// @Failure 429 {object} map[string]string "Rate limit exceeded"
-// @Failure 500 {object} map[string]string "Internal server error"
+// @Success 200 {object} FunctionResponse "Function deployed successfully"
+// @Failure 400 {object} httputil.ErrorResponse "Invalid request or file"
+// @Failure 401 {object} httputil.ErrorResponse "Unauthorized"
+// @Failure 429 {object} httputil.ErrorResponse "Rate limit exceeded"
+// @Failure 500 {object} httputil.ErrorResponse "Internal server error"
 func (h *Handler) Deploy(c *gin.Context) {
 	userID := c.GetInt("userID")
 	mainfestJSON := c.PostForm("manifest")
 
 	var manifest DeployRequestManifest
 	if err := json.Unmarshal([]byte(mainfestJSON), &manifest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid manifest format"})
+		httputil.WriteError(c, http.StatusBadRequest, "Invalid manifest format")
 		return
 	}
 
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 50<<20)
 	file, err := c.FormFile("artifact")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Artifact zip file is required or too large"})
+		httputil.WriteError(c, http.StatusBadRequest, "Artifact zip file is required or too large")
 		return
 	}
 
 	fileContent, err := file.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file"})
+		httputil.WriteError(c, http.StatusInternalServerError, "Failed to read file")
 		return
 	}
 	defer fileContent.Close()
@@ -74,16 +75,16 @@ func (h *Handler) Deploy(c *gin.Context) {
 	err = h.service.Deploy(c.Request.Context(), userID, manifest, fileContent)
 	if err != nil {
 		if errors.Is(err, ErrFunctionAlreadyExists) {
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			httputil.WriteError(c, http.StatusConflict, err.Error())
 			return
 		}
 		var verifyErr *ErrVerificationFailed
 		if errors.As(err, &verifyErr) {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": verifyErr.Error()})
+			httputil.WriteError(c, http.StatusUnprocessableEntity, verifyErr.Error())
 			return
 		}
 		h.log.Error("Service deployment failed", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Deployment processing failed"})
+		httputil.WriteError(c, http.StatusInternalServerError, "Deployment processing failed")
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"message": "Function deployed successfully"})
@@ -96,15 +97,15 @@ func (h *Handler) Deploy(c *gin.Context) {
 // @Security BearerAuth
 // @Produce json
 // @Success 200 {array} deployment.FunctionListResponse "List of functions"
-// @Failure 401 {object} map[string]string "Unauthorized"
-// @Failure 429 {object} map[string]string "Rate limit exceeded"
-// @Failure 500 {object} map[string]string "Internal server error"
+// @Failure 401 {object} httputil.ErrorResponse "Unauthorized"
+// @Failure 429 {object} httputil.ErrorResponse "Rate limit exceeded"
+// @Failure 500 {object} httputil.ErrorResponse "Internal server error"
 // @Router /functions/ [get]
 func (h *Handler) List(c *gin.Context) {
 	userID := c.GetInt("userID")
 	funcs, err := h.service.ListByUserID(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch functions"})
+		httputil.WriteError(c, http.StatusInternalServerError, "Failed to fetch functions")
 		return
 	}
 
@@ -123,10 +124,10 @@ func (h *Handler) List(c *gin.Context) {
 // @Security BearerAuth
 // @Produce json
 // @Param name path string true "Function name"
-// @Success 200 {object} deployment.FunctionResponse "Function details"
-// @Failure 401 {object} map[string]string "Unauthorized"
-// @Failure 404 {object} map[string]string "Function not found"
-// @Failure 429 {object} map[string]string "Rate limit exceeded"
+// @Success 200 {object} FunctionResponse "Function details"
+// @Failure 401 {object} httputil.ErrorResponse "Unauthorized"
+// @Failure 404 {object} httputil.ErrorResponse "Function not found"
+// @Failure 429 {object} httputil.ErrorResponse "Rate limit exceeded"
 // @Router /functions/{name} [get]
 func (h *Handler) Describe(c *gin.Context) {
 	name := c.Param("name")
@@ -134,7 +135,7 @@ func (h *Handler) Describe(c *gin.Context) {
 
 	f, err := h.service.GetByName(c.Request.Context(), userID, name)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Function not found"})
+		httputil.WriteError(c, http.StatusNotFound, "Function not found")
 		return
 	}
 
@@ -148,11 +149,11 @@ func (h *Handler) Describe(c *gin.Context) {
 // @Security BearerAuth
 // @Produce json
 // @Param name path string true "Function name"
-// @Success 200 {object} map[string]string "Success message"
-// @Failure 401 {object} map[string]string "Unauthorized"
-// @Failure 404 {object} map[string]string "Function not found"
-// @Failure 429 {object} map[string]string "Rate limit exceeded"
-// @Failure 500 {object} map[string]string "Failed to delete artifact or database record"
+// @Success 200 {object} httputil.ErrorResponse "Success message"
+// @Failure 401 {object} httputil.ErrorResponse "Unauthorized"
+// @Failure 404 {object} httputil.ErrorResponse "Function not found"
+// @Failure 429 {object} httputil.ErrorResponse "Rate limit exceeded"
+// @Failure 500 {object} httputil.ErrorResponse "Failed to delete artifact or database record"
 // @Router /functions/{name} [delete]
 func (h *Handler) Delete(c *gin.Context) {
 	name := c.Param("name")
@@ -161,10 +162,10 @@ func (h *Handler) Delete(c *gin.Context) {
 	err := h.service.Delete(c.Request.Context(), userID, name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Function not found"})
+			httputil.WriteError(c, http.StatusNotFound, "Function not found")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete function"})
+		httputil.WriteError(c, http.StatusInternalServerError, "Failed to delete function")
 		return
 	}
 

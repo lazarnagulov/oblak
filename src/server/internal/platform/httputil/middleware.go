@@ -20,13 +20,13 @@ func RequireAPIKey(authService TokenAuthenticator, log *zap.Logger) gin.HandlerF
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header missing"})
+			AbortWithError(c, http.StatusUnauthorized, "Authorization header missing")
 			return
 		}
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization format"})
+			AbortWithError(c, http.StatusUnauthorized, "Invalid Authorization format")
 			return
 		}
 
@@ -35,7 +35,7 @@ func RequireAPIKey(authService TokenAuthenticator, log *zap.Logger) gin.HandlerF
 		userID, err := authService.AuthenticateToken(c.Request.Context(), token)
 		if err != nil {
 			log.Warn("Unauthorized access attempt", zap.Error(err), zap.String("ip", c.ClientIP()))
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid API Key"})
+			AbortWithError(c, http.StatusUnauthorized, "Invalid API Key")
 			return
 		}
 
@@ -83,9 +83,7 @@ func rateLimit(limiter limiter.RateLimiter, endpoint string, cfg limiter.RateLim
 		}
 
 		if !allowed {
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"error": "Rate limit exceeded for this action",
-			})
+			AbortWithError(c, http.StatusTooManyRequests, "Rate limit exceeded for this action")
 			return
 		}
 

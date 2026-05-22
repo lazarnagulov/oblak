@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	_ "github.com/lazarnagulov/oblak/server/docs"
 	"github.com/lazarnagulov/oblak/server/internal/auth"
 	"github.com/lazarnagulov/oblak/server/internal/config"
 	"github.com/lazarnagulov/oblak/server/internal/deployment"

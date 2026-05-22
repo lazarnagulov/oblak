@@ -62,14 +62,14 @@ func NewRateLimiterHandler(
 
 func rateLimit(limiter limiter.RateLimiter, endpoint string, cfg limiter.RateLimiterConfig, log *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var identifer string
+		var identifier string
 		if userID, exists := c.Get("userID"); exists {
-			identifer = fmt.Sprintf("user:%v", userID)
+			identifier = fmt.Sprintf("user:%v", userID)
 		} else {
-			identifer = fmt.Sprintf("ip:%s", c.ClientIP())
+			identifier = fmt.Sprintf("ip:%s", c.ClientIP())
 		}
 
-		key := fmt.Sprintf("%s_%s", endpoint, identifer)
+		key := fmt.Sprintf("%s_%s", endpoint, identifier)
 
 		allowed, err := limiter.Allow(c, key, cfg)
 		if err != nil {

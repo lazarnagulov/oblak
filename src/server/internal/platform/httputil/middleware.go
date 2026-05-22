@@ -1,16 +1,22 @@
 package httputil
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/lazarnagulov/oblak/server/internal/auth"
+	"github.com/lazarnagulov/oblak/server/internal/platform/limiter"
 	"go.uber.org/zap"
 )
 
-func RequireAPIKey(authService auth.Service, log *zap.Logger) gin.HandlerFunc {
+type TokenAuthenticator interface {
+	AuthenticateToken(ctx context.Context, token string) (int, error)
+}
+
+func RequireAPIKey(authService TokenAuthenticator, log *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -34,6 +40,55 @@ func RequireAPIKey(authService auth.Service, log *zap.Logger) gin.HandlerFunc {
 		}
 
 		c.Set("userID", userID)
+		c.Next()
+	}
+}
+
+func NewRateLimiterHandler(
+	store limiter.RateLimiter,
+	limits map[string]limiter.RateLimiterConfig,
+	log *zap.Logger,
+) func(endpointName string) gin.HandlerFunc {
+	return func(endpointName string) gin.HandlerFunc {
+		cfg, ok := limits[endpointName]
+		if !ok {
+			cfg = limits["default"]
+			log.Warn("Rate limit config missing, using default", zap.String("endpoint", endpointName))
+		}
+
+		return rateLimit(store, endpointName, cfg, log)
+	}
+}
+
+func rateLimit(limiter limiter.RateLimiter, endpoint string, cfg limiter.RateLimiterConfig, log *zap.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var identifier string
+		if userID, exists := c.Get("userID"); exists {
+			identifier = fmt.Sprintf("user:%v", userID)
+		} else {
+			identifier = fmt.Sprintf("ip:%s", c.ClientIP())
+		}
+
+		key := fmt.Sprintf("%s_%s", endpoint, identifier)
+
+		allowed, err := limiter.Allow(c, key, cfg)
+		if err != nil {
+			log.Warn(
+				"Rate limiter temporarily unavailable, request may not be limited",
+				zap.Error(err),
+				zap.String("ip", c.ClientIP()),
+			)
+			c.Next()
+			return
+		}
+
+		if !allowed {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+				"error": "Rate limit exceeded for this action",
+			})
+			return
+		}
+
 		c.Next()
 	}
 }

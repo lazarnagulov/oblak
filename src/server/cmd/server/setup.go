@@ -10,6 +10,8 @@ import (
 	"github.com/lazarnagulov/oblak/server/internal/config"
 	"github.com/lazarnagulov/oblak/server/internal/deployment"
 	"github.com/lazarnagulov/oblak/server/internal/platform/db"
+	"github.com/lazarnagulov/oblak/server/internal/platform/httputil"
+	"github.com/lazarnagulov/oblak/server/internal/platform/limiter"
 	"go.uber.org/zap"
 )
 
@@ -29,23 +31,25 @@ func setupDependencies(cfg *config.AppConfig, log *zap.Logger) (*Application, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to create minio storage: %w", err)
 	}
-	_ = minioStorage
 
 	database, err := db.NewPostgresConnection(cfg.DB, log)
 	if err != nil {
 		return nil, fmt.Errorf("database connection failed: %w", err)
 	}
 
+	limiter := limiter.NewInMemoryLimiter()
+	limitHandler := httputil.NewRateLimiterHandler(limiter, cfg.RateLimits, log)
+
 	r := NewRouter(log)
 
 	authRepo := auth.NewRepository(database)
 	authService := auth.NewService(authRepo, log)
-	authHandler := auth.NewHandler(authService, log)
+	authHandler := auth.NewHandler(authService, limitHandler, log)
 	r.RegisterRoutes(authHandler)
 
 	deploymentRepo := deployment.NewRepository(database)
 	deploymentService := deployment.NewService(minioStorage, deploymentRepo, log)
-	deploymentHandler := deployment.NewHandler(deploymentService, authService, log)
+	deploymentHandler := deployment.NewHandler(deploymentService, authService, limitHandler, log)
 	r.RegisterRoutes(deploymentHandler)
 
 	return &Application{

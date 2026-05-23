@@ -1,0 +1,34 @@
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Manifest:
+  name: str
+  runtime: str
+  module: str
+  handler: str
+  timeout: int
+  memory: int
+
+
+@dataclass
+class ExecuteRequest:
+  artifact_b64: str
+  manifest: dict
+
+  def parse_manifest(self) -> Manifest:
+    m = self.manifest
+    return Manifest(
+      name=m.get("name", ""),
+      runtime=m.get("runtime", ""),
+      module=m.get("module", ""),
+      handler=m.get("handler", ""),
+      timeout=m.get("timeout", 5),
+      memory=m.get("memory", 128),
+    )
+
+
+@dataclass
+class ExecuteResponse:
+  success: bool
+  output: str = ""

@@ -40,7 +40,7 @@ func setupDependencies(cfg *config.AppConfig, log *zap.Logger) (*Application, er
 	limiter := limiter.NewInMemoryLimiter()
 	limitHandler := httputil.NewRateLimiterHandler(limiter, cfg.RateLimits, log)
 
-	r := NewRouter(log)
+	r := NewRouter(cfg.Env, log)
 
 	authRepo := auth.NewRepository(database)
 	authService := auth.NewService(authRepo, log)

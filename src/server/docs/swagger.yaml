@@ -137,6 +137,75 @@ paths:
       summary: List functions
       tags:
       - functions
+    post:
+      consumes:
+      - multipart/form-data
+      description: Uploads a function artifact (ZIP), verifies and registers it in
+        the system.
+      parameters:
+      - description: Name of the function
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: Runtime environment (e.g., python3.10)
+        in: formData
+        name: runtime
+        required: true
+        type: string
+      - description: Module name
+        in: formData
+        name: module
+        required: true
+        type: string
+      - description: Handler entrypoint (e.g., main.handler)
+        in: formData
+        name: handler
+        required: true
+        type: string
+      - description: Execution timeout in seconds (1-30)
+        in: formData
+        name: timeout
+        required: true
+        type: integer
+      - description: Allocated memory in MB (64-512)
+        in: formData
+        name: memory
+        required: true
+        type: integer
+      - description: Function ZIP artifact
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Function deployed successfully
+          schema:
+            $ref: '#/definitions/FunctionResponse'
+        "400":
+          description: Invalid request or file
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "429":
+          description: Rate limit exceeded
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Deploy a new function
+      tags:
+      - functions
   /functions/{name}:
     delete:
       description: Deletes a function from the database and removes its artifact from

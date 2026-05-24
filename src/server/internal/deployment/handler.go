@@ -48,6 +48,7 @@ func NewHandler(service Service, authService auth.Service, rateLimit limiter.Lim
 // @Failure 401 {object} httputil.ErrorResponse "Unauthorized"
 // @Failure 429 {object} httputil.ErrorResponse "Rate limit exceeded"
 // @Failure 500 {object} httputil.ErrorResponse "Internal server error"
+// @Router /functions/ [post]
 func (h *Handler) Deploy(c *gin.Context) {
 	userID := c.GetInt("userID")
 	mainfestJSON := c.PostForm("manifest")

@@ -19,7 +19,7 @@ WORKSPACE = Path.home() / "oblak_firecracker"
 FIRECRACKER_BIN = WORKSPACE / "firecracker"
 KERNEL_PATH = WORKSPACE / "vmlinux.bin"
 ROOTFS_PATH = WORKSPACE / "sandbox.rootfs.ext4"
-MAX_OUTPUT_SIZE = 10000  # Max characters to return from execution output
+MAX_OUTPUT_SIZE = 64 * 1024  # 64KB
 
 class UnixSocketConnection(http.client.HTTPConnection):
     """Custom HTTP client to send requests to Firecracker's Unix Socket"""
@@ -108,7 +108,7 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes) -> dict:
         fc_process = await asyncio.create_subprocess_exec(
             str(FIRECRACKER_BIN), "--api-sock", socket_path,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.STDOUT
         )
         
         await asyncio.sleep(0.1)
@@ -116,7 +116,7 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes) -> dict:
         # Boot Source
         api_put(socket_path, '/boot-source', {
             "kernel_image_path": str(KERNEL_PATH),
-            "boot_args": "console=ttyS0 reboot=k panic=1 pci=off init=/oblak_init"
+            "boot_args": "console=ttyS0 reboot=k panic=1 pci=off init=/oblak_init quiet loglevel=1"
         })
 
         # Root Filesystem
@@ -142,23 +142,31 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes) -> dict:
         })
 
         api_put(socket_path, '/actions', {"action_type": "InstanceStart"})
+        
+        async def read_stream(stream):
+            stdout_data = bytearray()
+            while True:
+                chunk = await stream.read(8192)
+                if not chunk:
+                    break
+                stdout_data.extend(chunk)
 
-        # Wait until the process finishes or timeout occurs
-        await asyncio.wait_for(fc_process.wait(), timeout=timeout)
-        
-        stdout, _ = await fc_process.communicate()
-        raw_output = stdout.decode('utf-8', errors='ignore')
-        
+                if len(stdout_data) > MAX_OUTPUT_SIZE:
+                    log.warning(f"[{run_id}] Output limit exceeded. Terminating VM.")
+                    if fc_process and fc_process.returncode is None:
+                        fc_process.kill()
+                    return stdout_data[:MAX_OUTPUT_SIZE].decode('utf-8', errors='ignore') + "\n...[output truncated]..." + "__OBLAK_END__"
+            return stdout_data.decode('utf-8', errors='ignore')
+
+        raw_output = await asyncio.wait_for(read_stream(fc_process.stdout), timeout=timeout + 1)
+
         if "__OBLAK_START__" in raw_output and "__OBLAK_END__" in raw_output:
             start_idx = raw_output.index("__OBLAK_START__") + len("__OBLAK_START__")
             end_idx = raw_output.index("__OBLAK_END__")
-            if abs(end_idx - start_idx) > MAX_OUTPUT_SIZE:
-                output_text = raw_output[start_idx:start_idx+MAX_OUTPUT_SIZE] + "\n...[output truncated]..."
-            else:
-                output_text = raw_output.split("__OBLAK_START__")[1].split("__OBLAK_END__")[0].strip()
+            output_text = raw_output[start_idx:end_idx].strip()
             success = True
         else:
-            log.error(f"[{run_id}] Execution did not produce expected output markers. Raw output:\n{raw_output}")
+            log.error(f"[{run_id}] Execution did not produce output markers. Output snippet:\n{raw_output[:500]}")
             output_text = "Error: Sandbox execution failed unexpectedly."
             success = False
 

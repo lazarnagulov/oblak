@@ -19,6 +19,7 @@ WORKSPACE = Path.home() / "oblak_firecracker"
 FIRECRACKER_BIN = WORKSPACE / "firecracker"
 KERNEL_PATH = WORKSPACE / "vmlinux.bin"
 ROOTFS_PATH = WORKSPACE / "sandbox.rootfs.ext4"
+MAX_OUTPUT_SIZE = 10000  # Max characters to return from execution output
 
 class UnixSocketConnection(http.client.HTTPConnection):
     """Custom HTTP client to send requests to Firecracker's Unix Socket"""
@@ -149,22 +150,28 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes) -> dict:
         raw_output = stdout.decode('utf-8', errors='ignore')
         
         if "__OBLAK_START__" in raw_output and "__OBLAK_END__" in raw_output:
-            output_text = raw_output.split("__OBLAK_START__")[1].split("__OBLAK_END__")[0].strip()
+            start_idx = raw_output.index("__OBLAK_START__") + len("__OBLAK_START__")
+            end_idx = raw_output.index("__OBLAK_END__")
+            if abs(end_idx - start_idx) > MAX_OUTPUT_SIZE:
+                output_text = raw_output[start_idx:start_idx+MAX_OUTPUT_SIZE] + "\n...[output truncated]..."
+            else:
+                output_text = raw_output.split("__OBLAK_START__")[1].split("__OBLAK_END__")[0].strip()
             success = True
         else:
-            output_text = "Execution failed or crashed. Raw Output:\n" + raw_output
+            log.error(f"[{run_id}] Execution did not produce expected output markers. Raw output:\n{raw_output}")
+            output_text = "Error: Sandbox execution failed unexpectedly."
             success = False
 
     except asyncio.TimeoutError:
-        log.error(f"[{run_id}] Execution timeout!")
+        log.warning(f"[{run_id}] Execution timeout. Terminating sandbox.")
         if fc_process:
             fc_process.kill()
         output_text = f"Error: Function timed out after {timeout} seconds."
         success = False
         
     except Exception as e:
-        log.error(f"[{run_id}] Sandbox error: {str(e)}")
-        output_text = f"Internal sandbox error: {str(e)}"
+        log.error(f"[{run_id}] Infrastructure/System Error: {str(e)}", exc_info=True)
+        output_text = "Error: Internal infrastructure error during sandbox initialization."
         success = False
 
     finally:

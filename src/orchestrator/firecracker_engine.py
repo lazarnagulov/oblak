@@ -76,12 +76,7 @@ print("__OBLAK_END__")
             f.write(launcher_code)
 
         run_script = """#!/bin/sh
-mount -t tmpfs -o size=10m tmpfs /tmp
-
-cd /mnt
-python3 /mnt/launcher.py > /tmp/out.txt 2>&1
-
-cat /tmp/out.txt
+python3 /mnt/launcher.py
 """
         with open(tmp_path / "run.sh", "w") as f:
             f.write(run_script)

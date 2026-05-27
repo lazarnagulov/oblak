@@ -8,6 +8,7 @@ import struct
 import sys
 import zipfile
 import uuid
+from firecracker_engine import execute_in_sandbox
 from models import Manifest, ExecuteRequest, ExecuteResponse
 
 logging.basicConfig(
@@ -28,42 +29,11 @@ async def write_message(writer: asyncio.StreamWriter, payload: dict):
     await writer.drain()
 
 async def run_in_firecracker(manifest: Manifest, artifact_bytes: bytes) -> ExecuteResponse:
-    """This function handles the entire Firecracker lifecycle"""
-    run_id = str(uuid.uuid4())
-    log.info(f"[{run_id}] Starting sandbox for {manifest.name}")
+    result = await execute_in_sandbox(manifest, artifact_bytes)
     
-    try:
-      zf = zipfile.ZipFile(io.BytesIO(artifact_bytes))
-    except zipfile.BadZipFile:
-      return ExecuteResponse(success=False, output="Not a valid zip file")
-
-    timeout = manifest.timeout
-    memory = manifest.memory
-    handler = manifest.handler
-    module = manifest.module
-    runtime = manifest.runtime
-
-    try:
-        # await asyncio.wait_for(wait_for_firecracker_to_finish(run_id), timeout=timeout)
-        
-        # Mock result for now
-        await asyncio.sleep(1) # Simulate execution time
-        result_output = "Hello from MVM."
-        success = True
-        
-    except asyncio.TimeoutError:
-        log.error(f"[{run_id}] Execution timeout. Killing MVM.")
-        # TODO: kill -9 firecracker_process
-        result_output = "Error: Function timed out."
-        success = False
-        
-    finally:
-        # TODO: Delete sockets, temporary payload drives, and ensure process is dead
-        log.info(f"[{run_id}] Cleaning up resources.")
-
     return ExecuteResponse(
-        success=success,
-        output=result_output
+        success=result["success"],
+        output=result["output"]
     )
 
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):

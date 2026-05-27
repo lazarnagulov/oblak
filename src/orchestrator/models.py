@@ -10,6 +10,16 @@ class Manifest:
   timeout: int
   memory: int
 
+  def dict(self):
+    return {
+      "name": self.name,
+      "runtime": self.runtime,
+      "module": self.module,
+      "handler": self.handler,
+      "timeout": self.timeout,
+      "memory": self.memory,
+    }
+
 
 @dataclass
 class ExecuteRequest:

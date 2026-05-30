@@ -28,8 +28,18 @@ async def write_message(writer: asyncio.StreamWriter, payload: dict):
     writer.write(struct.pack(">I", len(data)) + data)
     await writer.drain()
 
-async def run_in_firecracker(manifest: Manifest, artifact_bytes: bytes) -> ExecuteResponse:
-    result = await execute_in_sandbox(manifest, artifact_bytes)
+def normalize_payload(raw_payload) -> dict:
+    if raw_payload is None:
+        return {}
+    if not isinstance(raw_payload, dict):
+        raise ValueError("payload must be an object")
+    for key in raw_payload.keys():
+        if not isinstance(key, str):
+            raise ValueError("payload keys must be strings")
+    return raw_payload
+
+async def run_in_firecracker(manifest: Manifest, artifact_bytes: bytes, payload: dict) -> ExecuteResponse:
+    result = await execute_in_sandbox(manifest, artifact_bytes, payload)
     
     return ExecuteResponse(
         success=result["success"],
@@ -43,12 +53,14 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         request = ExecuteRequest(
             artifact_b64=raw.get("artifact_b64", ""),
             manifest=raw.get("manifest", {}),
+            payload=raw.get("payload", {}),
         )
+        payload = normalize_payload(request.payload)
         manifest = request.parse_manifest()
         log.info(f"Received request to execute script '{manifest.name}'")
         
         artifact_bytes = base64.b64decode(request.artifact_b64)
-        result = await run_in_firecracker(manifest, artifact_bytes)
+        result = await run_in_firecracker(manifest, artifact_bytes, payload)
 
         await write_message(writer, {
             "success": result.success,

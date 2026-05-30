@@ -25,6 +25,7 @@ class Manifest:
 class ExecuteRequest:
   artifact_b64: str
   manifest: dict
+  payload: dict = field(default_factory=dict)
 
   def parse_manifest(self) -> Manifest:
     m = self.manifest

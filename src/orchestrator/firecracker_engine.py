@@ -42,7 +42,7 @@ def api_put(socket_path: str, url_path: str, payload: dict):
         raise Exception(f"Firecracker API Error {resp.status}: {error_msg}")
     conn.close()
 
-def create_payload_drive(artifact_bytes: bytes, manifest: Manifest, dest_ext4: Path):
+def create_payload_drive(artifact_bytes: bytes, manifest: Manifest, payload: dict, dest_ext4: Path):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         
@@ -51,6 +51,9 @@ def create_payload_drive(artifact_bytes: bytes, manifest: Manifest, dest_ext4: P
             
         with open(tmp_path / "manifest.json", "w") as f:
             json.dump(manifest.dict(), f)
+
+        with open(tmp_path / "payload.json", "w") as f:
+            json.dump(payload, f)
             
         launcher_code = """
 import sys
@@ -67,8 +70,24 @@ try:
     mod_name = manifest.get('module', 'cli')
     handler_name = manifest.get('handler', 'handler')
 
+    payload = {}
+    try:
+        with open('/mnt/payload.json', 'r') as f:
+            payload = json.load(f)
+    except FileNotFoundError:
+        payload = {}
+
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise TypeError('payload must be an object')
+
     mod = importlib.import_module(mod_name)
-    getattr(mod, handler_name)()
+    handler = getattr(mod, handler_name)
+    if payload:
+        handler(**payload)
+    else:
+        handler()
 except Exception as e:
     print(f"Execution Error: {type(e).__name__}: {str(e)}")
 print("__OBLAK_END__")
@@ -85,7 +104,7 @@ python3 /mnt/launcher.py
         subprocess.run(["dd", "if=/dev/zero", f"of={dest_ext4}", "bs=1M", "count=10"], capture_output=True, check=True)
         subprocess.run(["mkfs.ext4", "-F", "-d", str(tmp_path), str(dest_ext4)], capture_output=True, check=True)
 
-async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes) -> dict:
+async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload: dict) -> dict:
     run_id = str(uuid.uuid4())
     socket_path = f"/tmp/fc_{run_id}.sock"
     payload_path = WORKSPACE / f"payload_{run_id}.ext4"
@@ -100,7 +119,7 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes) -> dict:
     success = False
 
     try:
-        create_payload_drive(artifact_bytes, manifest, payload_path)
+        create_payload_drive(artifact_bytes, manifest, payload, payload_path)
 
         if os.path.exists(socket_path):
             os.remove(socket_path)

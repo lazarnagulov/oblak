@@ -3,6 +3,7 @@ package deployment
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 type Repository interface {
@@ -11,6 +12,8 @@ type Repository interface {
 	ListByUserID(ctx context.Context, userID int) ([]Function, error)
 	GetByName(ctx context.Context, userID int, name string) (*Function, error)
 	Delete(ctx context.Context, userID int, name string) (string, error)
+	CreateAccessToken(ctx context.Context, functionID string, tokenHash string, expiresAt time.Time) error
+	GetByAccessToken(ctx context.Context, tokenHash string) (*Function, error)
 }
 
 type sqlRepository struct {
@@ -88,4 +91,30 @@ func (r *sqlRepository) Delete(ctx context.Context, userID int, name string) (st
 	}
 
 	return functionID, nil
+}
+
+func (r *sqlRepository) CreateAccessToken(ctx context.Context, functionID string, tokenHash string, expiresAt time.Time) error {
+	query := `INSERT INTO function_access_tokens (function_id, token_hash, expires_at) VALUES ($1, $2, $3)`
+	_, err := r.db.ExecContext(ctx, query, functionID, tokenHash, expiresAt)
+	return err
+}
+
+func (r *sqlRepository) GetByAccessToken(ctx context.Context, tokenHash string) (*Function, error) {
+	query := `
+		SELECT f.id, f.owner_id, f.name, f.runtime, f.module_name, f.handler_name,
+			f.artifact_hash, f.timeout_seconds, f.memory_mb, f.created_at
+		FROM function_access_tokens t
+		JOIN functions f ON f.id = t.function_id
+		WHERE t.token_hash = $1 AND t.expires_at > NOW()
+	`
+
+	f := &Function{}
+	err := r.db.QueryRowContext(ctx, query, tokenHash).Scan(
+		&f.ID, &f.OwnerID, &f.Name, &f.Runtime, &f.ModuleName, &f.HandlerName,
+		&f.ArtifactHash, &f.Timeout, &f.Memory, &f.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -52,7 +53,7 @@ func (h *Handler) Deploy(c *gin.Context) {
 	}
 	defer fileContent.Close()
 
-	err = h.service.Deploy(c.Request.Context(), userID, manifest, fileContent)
+	accessToken, err := h.service.Deploy(c.Request.Context(), userID, manifest, fileContent)
 	if err != nil {
 		if errors.Is(err, ErrFunctionAlreadyExists) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -67,7 +68,17 @@ func (h *Handler) Deploy(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Deployment processing failed"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"message": "Function deployed successfully"})
+
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	accessURL := fmt.Sprintf("%s://%s/api/v1/execute/%s", scheme, c.Request.Host, accessToken)
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":    "Function deployed successfully",
+		"access_url": accessURL,
+	})
 }
 
 func (h *Handler) List(c *gin.Context) {
@@ -114,4 +125,21 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusNoContent, gin.H{"message": "Function deleted successfully"})
+}
+
+func (h *Handler) ExecuteByToken(c *gin.Context) {
+	token := c.Param("token")
+
+	result, err := h.service.ExecuteByAccessToken(c.Request.Context(), token)
+	if err != nil {
+		if errors.Is(err, ErrAccessTokenInvalid) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Access token invalid or expired"})
+			return
+		}
+		h.log.Error("Execution failed", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Execution failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, ExecuteResponse{Success: result.Success, Output: result.Output})
 }

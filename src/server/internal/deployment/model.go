@@ -44,6 +44,11 @@ type FunctionListResponse struct {
 	Runtime string `json:"runtime"`
 }
 
+type ExecuteResponse struct {
+	Success bool   `json:"success"`
+	Output  string `json:"output"`
+}
+
 func ToListResponse(f *Function) FunctionListResponse {
 	return FunctionListResponse{
 		Name:    f.Name,

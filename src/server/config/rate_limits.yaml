@@ -14,6 +14,9 @@ rate_limits:
   delete_function:
     capacity: 20
     refill: 1.0
+  execute_function:
+    capacity: 5
+    refill: 0.05
   default:
     capacity: 30
     refill: 1.0

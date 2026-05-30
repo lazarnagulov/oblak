@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS executions (
     )) 
 );
 
+CREATE TABLE IF NOT EXISTS function_access_tokens (
+    id SERIAL PRIMARY KEY,
+    function_id UUID NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_functions_owner_id
     ON functions(owner_id);
 
@@ -59,6 +67,9 @@ CREATE INDEX IF NOT EXISTS idx_executions_status
 
 CREATE INDEX IF NOT EXISTS idx_executions_function_id
     ON executions(function_id);
+
+CREATE INDEX IF NOT EXISTS idx_function_access_tokens_function_id
+    ON function_access_tokens(function_id);
 
 INSERT INTO users (username, password_hash) 
 VALUES ('lazar', '$2a$10$wFRsfsXjMRaLaDN/wJ6AQuIIanU0v6Kk/QUpo0v5x.mWPy.KYTYgC')

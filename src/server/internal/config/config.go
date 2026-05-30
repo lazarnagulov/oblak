@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/lazarnagulov/oblak/server/internal/deployment"
@@ -12,11 +14,13 @@ import (
 )
 
 type AppConfig struct {
-	Env        string
-	Port       string
-	DB         db.Config
-	Minio      deployment.MinioConfig
-	RateLimits map[string]limiter.RateLimiterConfig
+	Env                 string
+	Port                string
+	DB                  db.Config
+	Minio               deployment.MinioConfig
+	Orchestrator        deployment.OrchestratorConfig
+	AccessURLTTLMinutes int
+	RateLimits          map[string]limiter.RateLimiterConfig
 }
 
 func Load(log *zap.Logger) *AppConfig {
@@ -46,6 +50,11 @@ func Load(log *zap.Logger) *AppConfig {
 			BucketName: "oblak-artifacts",
 			UseSSL:     getEnv("MINIO_USE_SSL", "") == "true",
 		},
+		Orchestrator: deployment.OrchestratorConfig{
+			SocketPath: getEnv("ORCHESTRATOR_SOCKET", "/tmp/oblak_orchestrator.sock"),
+			Timeout:    getEnvDurationSeconds("ORCHESTRATOR_TIMEOUT_SECONDS", 90),
+		},
+		AccessURLTTLMinutes: getEnvInt("ACCESS_URL_TTL_MINUTES", 60),
 		RateLimits: loadRateLimits(rateLimitsPath, log),
 	}
 }
@@ -75,10 +84,28 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+func getEnvInt(key string, fallback int) int {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvDurationSeconds(key string, fallbackSeconds int) time.Duration {
+	seconds := getEnvInt(key, fallbackSeconds)
+	return time.Duration(seconds) * time.Second
+}
+
 func getDefaultRateLimits() map[string]limiter.RateLimiterConfig {
 	return map[string]limiter.RateLimiterConfig{
-		"default": {Capacity: 10, Refill: 1.0},
-		"login":   {Capacity: 5, Refill: 0.05},
-		"deploy":  {Capacity: 5, Refill: 0.1},
+		"default":          {Capacity: 10, Refill: 1.0},
+		"login":            {Capacity: 5, Refill: 0.05},
+		"deploy":           {Capacity: 5, Refill: 0.1},
+		"execute_function": {Capacity: 5, Refill: 0.05},
 	}
 }

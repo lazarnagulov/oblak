@@ -7,6 +7,7 @@ import (
 
 var ErrFunctionAlreadyExists = errors.New("a function with this name already exists for this user")
 var ErrAccessTokenInvalid = errors.New("access token is invalid or expired")
+var ErrFunctionNotFound = errors.New("function not found")
 
 type ErrVerificationFailed struct {
 	Reason string

@@ -19,7 +19,8 @@ type Service interface {
 	ListByUserID(ctx context.Context, userID int) ([]Function, error)
 	GetByName(ctx context.Context, userID int, name string) (*Function, error)
 	Delete(ctx context.Context, userID int, name string) error
-	ExecuteByAccessToken(ctx context.Context, rawToken string) (*ExecuteResponse, error)
+	ExecuteByAccessToken(ctx context.Context, rawToken string, payload []byte) (*ExecuteResult, error)
+	GenerateAccessToken(ctx context.Context, userID int, name string) (string, error)
 }
 
 type service struct {
@@ -93,17 +94,10 @@ func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequest
 		return "", fmt.Errorf("database error")
 	}
 
-	accessToken, err := s.generateAccessToken()
+	accessToken, err := s.createAccessToken(ctx, dbFunc)
 	if err != nil {
 		s.log.Error("Failed to generate access token", zap.Error(err))
 		return "", fmt.Errorf("access token generation failed")
-	}
-
-	accessTokenHash := s.hashToken(accessToken)
-	expiresAt := time.Now().Add(s.tokenTTL)
-	if err := s.repo.CreateAccessToken(ctx, functionID.String(), accessTokenHash, expiresAt); err != nil {
-		s.log.Error("Failed to store access token", zap.Error(err))
-		return "", fmt.Errorf("access token storage failed")
 	}
 
 	s.log.Info("Function successfully deployed", zap.String("function_id", functionID.String()))
@@ -133,7 +127,7 @@ func (s *service) Delete(ctx context.Context, userID int, name string) error {
 	return nil
 }
 
-func (s *service) ExecuteByAccessToken(ctx context.Context, rawToken string) (*ExecuteResponse, error) {
+func (s *service) ExecuteByAccessToken(ctx context.Context, rawToken string, payload []byte) (*ExecuteResult, error) {
 	tokenHash := s.hashToken(rawToken)
 
 	f, err := s.repo.GetByAccessToken(ctx, tokenHash)
@@ -141,6 +135,63 @@ func (s *service) ExecuteByAccessToken(ctx context.Context, rawToken string) (*E
 		return nil, ErrAccessTokenInvalid
 	}
 
+	return s.execute(ctx, f, payload)
+}
+
+func (s *service) GenerateAccessToken(ctx context.Context, userID int, name string) (string, error) {
+	f, err := s.repo.GetByName(ctx, userID, name)
+	if err != nil {
+		return "", ErrFunctionNotFound
+	}
+
+	err = s.repo.DeleteAccessTokensByFunctionID(ctx, f.ID)
+	if err != nil {
+		s.log.Error("Failed to delete existing access tokens", zap.Error(err))
+		return "", fmt.Errorf("failed to delete existing access tokens")
+	}
+
+	accessToken, err := s.createAccessToken(ctx, f)
+	if err != nil {
+		s.log.Error("Failed to generate access token", zap.Error(err))
+		return "", fmt.Errorf("access token generation failed")
+	}
+
+	return accessToken, nil
+}
+
+func (s *service) hashArtifact(tee io.Reader) (string, error) {
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, tee); err != nil {
+		return "", fmt.Errorf("failed to calculate hash: %w", err)
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func (s *service) hashToken(token string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(token))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func (s *service) createAccessToken(ctx context.Context, f *Function) (string, error) {
+	bytes := make([]byte, 32)
+
+	if _, err := rand.Read(bytes); err != nil {
+		s.log.Error("Failed to generate access token", zap.Error(err))
+		return "", fmt.Errorf("access token generation failed")
+	}
+
+	accessToken := "oblak_exec_" + hex.EncodeToString(bytes)
+	accessTokenHash := s.hashToken(accessToken)
+	expiresAt := time.Now().Add(s.tokenTTL)
+	if err := s.repo.CreateAccessToken(ctx, f.ID.String(), accessTokenHash, expiresAt); err != nil {
+		s.log.Error("Failed to store access token", zap.Error(err))
+		return "", fmt.Errorf("access token storage failed")
+	}
+	return accessToken, nil
+}
+
+func (s *service) execute(ctx context.Context, f *Function, payload []byte) (*ExecuteResult, error) {
 	storageKey := fmt.Sprintf("functions/%d/%s.zip", f.OwnerID, f.ID)
 	artifactReader, err := s.storage.Donwload(ctx, storageKey)
 	if err != nil {
@@ -163,33 +214,11 @@ func (s *service) ExecuteByAccessToken(ctx context.Context, rawToken string) (*E
 		Memory:  f.Memory,
 	}
 
-	result, err := s.orchestrator.Execute(ctx, manifest, artifactBytes)
+	result, err := s.orchestrator.Execute(ctx, manifest, artifactBytes, payload)
 	if err != nil {
 		s.log.Error("Orchestrator execution failed", zap.Error(err))
 		return nil, fmt.Errorf("orchestrator execution failed")
 	}
 
 	return result, nil
-}
-
-func (s *service) hashArtifact(tee io.Reader) (string, error) {
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, tee); err != nil {
-		return "", fmt.Errorf("failed to calculate hash: %w", err)
-	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
-}
-
-func (s *service) generateAccessToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return "oblak_exec_" + hex.EncodeToString(bytes), nil
-}
-
-func (s *service) hashToken(token string) string {
-	hasher := sha256.New()
-	hasher.Write([]byte(token))
-	return hex.EncodeToString(hasher.Sum(nil))
 }

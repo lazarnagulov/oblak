@@ -110,6 +110,7 @@ def deploy(
         
         if response.status_code in (200, 201):
             rich.print("[bold green]Deployment successful![/bold green]")
+            rich.print(f"Your function is now available at: [bold blue]{response.json().get('access_url')}[/bold blue]")
         else:
             error_msg = response.json().get("error", response.text)
             rich.print(f"[bold red]Deploy failed:[/bold red] {error_msg}")
@@ -213,6 +214,26 @@ def delete(
 def scan_results(function_name: str = typer.Argument(...),):
     rich.print("[bold magenta]FUNCTION SCAN RESULTS[/bold magenta]")
     rich.print(f"Function: {function_name}")
+
+@function_app.command("generate-url")
+def generate_link(function_name: str = typer.Argument(...),):
+    rich.print(f"[bold yellow]Generating new access URL for '{function_name}'...[/bold yellow]")
+
+    try:
+        response = requests.get(
+            f"{auth.get_server_url()}/functions/{function_name}/generate-url",
+            headers=auth.get_auth_headers(),
+            timeout=10,
+        )
+        response.raise_for_status()
+        access_url = response.json().get("access_url")
+        rich.print("[bold green]New access URL generated:[/bold green]")
+        rich.print(f"[bold blue]{access_url}[/bold blue]")
+
+    except requests.exceptions.HTTPError:
+        rich.print(f"[bold red]Error:[/bold red] Failed to generate access URL for function '{function_name}'.")
+    except Exception as e:
+        rich.print(f"[bold red]Error:[/bold red] {e}")
 
 @app.command("invoke")
 def invoke(

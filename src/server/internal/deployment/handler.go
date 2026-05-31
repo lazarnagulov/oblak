@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -17,15 +18,17 @@ type Handler struct {
 	service     Service
 	authService auth.Service
 	rateLimit   limiter.LimitHandler
+	apiURL      string
 	log         *zap.Logger
 }
 
-func NewHandler(service Service, authService auth.Service, rateLimit limiter.LimitHandler, log *zap.Logger) *Handler {
+func NewHandler(service Service, authService auth.Service, rateLimit limiter.LimitHandler, apiURL string, log *zap.Logger) *Handler {
 	return &Handler{
 		service:     service,
 		authService: authService,
 		rateLimit:   rateLimit,
 		log:         log,
+		apiURL:      apiURL,
 	}
 }
 
@@ -69,11 +72,7 @@ func (h *Handler) Deploy(c *gin.Context) {
 		return
 	}
 
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	accessURL := fmt.Sprintf("%s://%s/api/v1/execute/%s", scheme, c.Request.Host, accessToken)
+	accessURL := fmt.Sprintf("%s/execute/%s", h.apiURL, accessToken)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message":    "Function deployed successfully",
@@ -127,10 +126,42 @@ func (h *Handler) Delete(c *gin.Context) {
 	c.JSON(http.StatusNoContent, gin.H{"message": "Function deleted successfully"})
 }
 
-func (h *Handler) ExecuteByToken(c *gin.Context) {
+func (h *Handler) ExecuteByTokenBody(c *gin.Context) {
+	var payload []byte = nil
+	if c.Request.Body != nil {
+		var err error
+		payload, err = io.ReadAll(c.Request.Body)
+		if err != nil && err != io.EOF {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+	}
+	h.executeByToken(c, payload)
+}
+
+func (h *Handler) ExecuteByTokenQuery(c *gin.Context) {
+	payloadMap := make(map[string]any)
+
+	for key, values := range c.Request.URL.Query() {
+		if len(values) == 1 {
+			payloadMap[key] = values[0]
+		} else {
+			payloadMap[key] = values
+		}
+	}
+
+	payloadBytes, err := json.Marshal(payloadMap)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process query parameters"})
+		return
+	}
+	h.executeByToken(c, payloadBytes)
+}
+
+func (h *Handler) executeByToken(c *gin.Context, payload []byte) {
 	token := c.Param("token")
 
-	result, err := h.service.ExecuteByAccessToken(c.Request.Context(), token)
+	result, err := h.service.ExecuteByAccessToken(c.Request.Context(), token, payload)
 	if err != nil {
 		if errors.Is(err, ErrAccessTokenInvalid) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Access token invalid or expired"})
@@ -141,5 +172,23 @@ func (h *Handler) ExecuteByToken(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ExecuteResponse{Success: result.Success, Output: result.Output})
+	c.JSON(http.StatusOK, ExecuteResponse{Success: result.Success, Logs: result.Logs, ErrorMessage: result.ErrorMessage, Result: result.Result, ExecutionTimeMs: result.ExecutionTimeMs})
+}
+
+func (h *Handler) GenerateURL(c *gin.Context) {
+	name := c.Param("name")
+	userID := c.GetInt("userID")
+
+	accessToken, err := h.service.GenerateAccessToken(c.Request.Context(), userID, name)
+	if err != nil {
+		if errors.Is(err, ErrFunctionNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Function not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate access token"})
+		return
+	}
+
+	accessURL := fmt.Sprintf("%s/execute/%s", h.apiURL, accessToken)
+	c.JSON(http.StatusOK, gin.H{"access_url": accessURL})
 }

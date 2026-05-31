@@ -16,6 +16,7 @@ import (
 type AppConfig struct {
 	Env                 string
 	Port                string
+	ApiURL              string
 	DB                  db.Config
 	Minio               deployment.MinioConfig
 	Orchestrator        deployment.OrchestratorConfig
@@ -34,8 +35,9 @@ func Load(log *zap.Logger) *AppConfig {
 	rateLimitsPath := getEnv("RATE_LIMITS_FILE", "rate_limits.yaml")
 
 	return &AppConfig{
-		Env:  env,
-		Port: getEnv("PORT", "8080"),
+		Env:    env,
+		Port:   getEnv("PORT", "8080"),
+		ApiURL: getEnv("API_URL", "http://localhost:8080/api/v1"),
 		DB: db.Config{
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
@@ -52,10 +54,10 @@ func Load(log *zap.Logger) *AppConfig {
 		},
 		Orchestrator: deployment.OrchestratorConfig{
 			SocketPath: getEnv("ORCHESTRATOR_SOCKET", "/tmp/oblak_orchestrator.sock"),
-			Timeout:    getEnvDurationSeconds("ORCHESTRATOR_TIMEOUT_SECONDS", 90),
+			Timeout:    getEnvDurationSeconds("ORCHESTRATOR_TIMEOUT_SECONDS", 30),
 		},
 		AccessURLTTLMinutes: getEnvInt("ACCESS_URL_TTL_MINUTES", 60),
-		RateLimits: loadRateLimits(rateLimitsPath, log),
+		RateLimits:          loadRateLimits(rateLimitsPath, log),
 	}
 }
 
@@ -107,5 +109,6 @@ func getDefaultRateLimits() map[string]limiter.RateLimiterConfig {
 		"login":            {Capacity: 5, Refill: 0.05},
 		"deploy":           {Capacity: 5, Refill: 0.1},
 		"execute_function": {Capacity: 5, Refill: 0.05},
+		"generate_url":     {Capacity: 20, Refill: 1.0},
 	}
 }

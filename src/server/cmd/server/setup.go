@@ -52,7 +52,8 @@ func setupDependencies(cfg *config.AppConfig, log *zap.Logger) (*Application, er
 	orchestratorClient := deployment.NewOrchestratorClient(cfg.Orchestrator)
 	accessTokenTTL := time.Duration(cfg.AccessURLTTLMinutes) * time.Minute
 	deploymentService := deployment.NewService(minioStorage, deploymentRepo, orchestratorClient, accessTokenTTL, log)
-	deploymentHandler := deployment.NewHandler(deploymentService, authService, limitHandler, log)
+	apiURL := cfg.ApiURL
+	deploymentHandler := deployment.NewHandler(deploymentService, authService, limitHandler, apiURL, log)
 	r.RegisterRoutes(deploymentHandler)
 
 	return &Application{

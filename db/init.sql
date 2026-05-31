@@ -34,12 +34,11 @@ CREATE TABLE IF NOT EXISTS executions (
     status VARCHAR(30) NOT NULL,
     started_at TIMESTAMP,
     finished_at TIMESTAMP,
-    exit_code INT,
     execution_time_ms INT,
-    stdout_key TEXT,
-    stderr_key TEXT,
+    logs TEXT,
+    result_data TEXT,
     error_message TEXT,
-    wroker_node VARCHAR(100),
+    worker_node VARCHAR(100),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
     CONSTRAINT chk_ExecutionStatus CHECK (status IN (

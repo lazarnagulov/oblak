@@ -11,6 +11,9 @@ rate_limits:
   describe_function:
     capacity: 100
     refill: 5.0
+  generate_url:
+    capacity: 20
+    refill: 1.0
   delete_function:
     capacity: 20
     refill: 1.0

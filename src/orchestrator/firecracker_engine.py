@@ -8,10 +8,11 @@ import tempfile
 import uuid
 import zipfile
 import http.client
+import time
 from pathlib import Path
 import logging
 
-from models import Manifest
+from models import ExecuteResult, Manifest
 
 log = logging.getLogger("firecracker_engine")
 
@@ -63,6 +64,7 @@ import importlib
 sys.path.append('/mnt')
 
 print("__OBLAK_START__")
+result = None
 try:
     with open('/mnt/manifest.json', 'r') as f:
         manifest = json.load(f)
@@ -85,12 +87,23 @@ try:
     mod = importlib.import_module(mod_name)
     handler = getattr(mod, handler_name)
     if payload:
-        handler(**payload)
+        result = handler(**payload)
     else:
-        handler()
+        result = handler()
+    print("__OBLAK_END__")
+
 except Exception as e:
-    print(f"Execution Error: {type(e).__name__}: {str(e)}")
-print("__OBLAK_END__")
+    err_str = f"{type(e).__name__}: {str(e)}"
+    print(f"Execution Error: {err_str}")
+    print("__OBLAK_END__")
+    print("__OBLAK_ERROR_START__")
+    print(err_str)
+    print("__OBLAK_ERROR_END__")
+
+if result is not None:
+    print("__OBLAK_RESULT_START__")
+    print(json.dumps(result))
+    print("__OBLAK_RESULT_END__")
 """
         with open(tmp_path / "launcher.py", "w") as f:
             f.write(launcher_code)
@@ -104,7 +117,7 @@ python3 /mnt/launcher.py
         subprocess.run(["dd", "if=/dev/zero", f"of={dest_ext4}", "bs=1M", "count=10"], capture_output=True, check=True)
         subprocess.run(["mkfs.ext4", "-F", "-d", str(tmp_path), str(dest_ext4)], capture_output=True, check=True)
 
-async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload: dict) -> dict:
+async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload: dict) -> ExecuteResult:
     run_id = str(uuid.uuid4())
     socket_path = f"/tmp/fc_{run_id}.sock"
     payload_path = WORKSPACE / f"payload_{run_id}.ext4"
@@ -115,8 +128,11 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
     handler = manifest.handler
 
     fc_process = None
-    output_text = ""
+    function_logs = ""
+    function_result = None
+    error_message = None
     success = False
+    execution_time_ms = 0
 
     try:
         create_payload_drive(artifact_bytes, manifest, payload, payload_path)
@@ -161,7 +177,7 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
         })
 
         api_put(socket_path, '/actions', {"action_type": "InstanceStart"})
-        
+
         async def read_stream(stream):
             stdout_data = bytearray()
             while True:
@@ -177,28 +193,56 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
                     return stdout_data[:MAX_OUTPUT_SIZE].decode('utf-8', errors='ignore') + "\n...[output truncated]..." + "__OBLAK_END__"
             return stdout_data.decode('utf-8', errors='ignore')
 
+        start_time = time.perf_counter()
         raw_output = await asyncio.wait_for(read_stream(fc_process.stdout), timeout=timeout + 1)
+        end_time = time.perf_counter()
+        print(f"Raw output from sandbox:\n{raw_output}")
+        execution_time_ms = int((end_time - start_time) * 1000)
 
         if "__OBLAK_START__" in raw_output and "__OBLAK_END__" in raw_output:
             start_idx = raw_output.index("__OBLAK_START__") + len("__OBLAK_START__")
             end_idx = raw_output.index("__OBLAK_END__")
-            output_text = raw_output[start_idx:end_idx].strip()
+            function_logs = raw_output[start_idx:end_idx].strip()
             success = True
         else:
-            log.error(f"[{run_id}] Execution did not produce output markers. Output snippet:\n{raw_output[:500]}")
-            output_text = "Error: Sandbox execution failed unexpectedly."
+            log.error(f"[{run_id}] Execution did not produce output markers. Log snippet:\n{raw_output[:2000]}")
+            error_message = "Error: Sandbox execution failed unexpectedly."
             success = False
+
+        if "__OBLAK_ERROR_START__" in raw_output and "__OBLAK_ERROR_END__" in raw_output:
+            err_start = raw_output.index("__OBLAK_ERROR_START__") + len("__OBLAK_ERROR_START__")
+            err_end = raw_output.index("__OBLAK_ERROR_END__")
+            error_raw = raw_output[err_start:err_end].strip()
+            if error_raw:
+                error_message = error_raw
+                success = False
+
+        if success and "__OBLAK_RESULT_START__" in raw_output and "__OBLAK_RESULT_END__" in raw_output:
+            print("Extracting function result from logs")
+            res_start = raw_output.index("__OBLAK_RESULT_START__") + len("__OBLAK_RESULT_START__")
+            res_end = raw_output.index("__OBLAK_RESULT_END__")
+            result_raw = raw_output[res_start:res_end].strip()
+            print("Raw result extracted:", result_raw)
+            print("Start index:", res_start, "End index:", res_end)
+            try:
+                function_result = json.loads(result_raw)
+                print("Parsed function result:", function_result)
+            except json.JSONDecodeError:
+                function_result = result_raw
+        
+
 
     except asyncio.TimeoutError:
         log.warning(f"[{run_id}] Execution timeout. Terminating sandbox.")
         if fc_process:
             fc_process.kill()
-        output_text = f"Error: Function timed out after {timeout} seconds."
+        error_message = f"Error: Function timed out after {timeout} seconds."
         success = False
+        execution_time_ms = timeout * 1000
         
     except Exception as e:
         log.error(f"[{run_id}] Infrastructure/System Error: {str(e)}", exc_info=True)
-        output_text = "Error: Internal infrastructure error during sandbox initialization."
+        error_message = "Error: Internal infrastructure error during sandbox initialization."
         success = False
 
     finally:
@@ -214,4 +258,10 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
         if os.path.exists(payload_path):
             os.remove(payload_path)
 
-    return {"success": success, "output": output_text}
+    return ExecuteResult(
+         success=success, 
+         logs=function_logs, 
+         error_message=error_message, 
+         result=function_result, 
+         execution_time_ms=execution_time_ms
+    )

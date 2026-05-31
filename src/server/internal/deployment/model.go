@@ -44,9 +44,21 @@ type FunctionListResponse struct {
 	Runtime string `json:"runtime"`
 }
 
+type ExecuteResult struct {
+	Success         bool   `json:"success"`
+	Logs            string `json:"logs"`
+	ErrorMessage    string `json:"error_message"`
+	Result          any    `json:"result"`
+	ExecutionTimeMs int64  `json:"execution_time_ms"`
+	WorkerNode      string `json:"worker_node"`
+}
+
 type ExecuteResponse struct {
-	Success bool   `json:"success"`
-	Output  string `json:"output"`
+	Success         bool   `json:"success"`
+	Logs            string `json:"logs"`
+	ErrorMessage    string `json:"error_message,omitempty"`
+	Result          any    `json:"result"`
+	ExecutionTimeMs int64  `json:"execution_time_ms"`
 }
 
 func ToListResponse(f *Function) FunctionListResponse {

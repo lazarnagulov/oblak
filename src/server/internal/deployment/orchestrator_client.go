@@ -12,7 +12,7 @@ import (
 )
 
 type OrchestratorClient interface {
-	Execute(ctx context.Context, manifest DeployRequestManifest, artifactBytes []byte) (*ExecuteResponse, error)
+	Execute(ctx context.Context, manifest DeployRequestManifest, artifactBytes []byte, payload []byte) (*ExecuteResult, error)
 }
 
 type OrchestratorConfig struct {
@@ -32,15 +32,20 @@ func NewOrchestratorClient(cfg OrchestratorConfig) OrchestratorClient {
 type orchestratorRequest struct {
 	ArtifactB64 string                `json:"artifact_b64"`
 	Manifest    DeployRequestManifest `json:"manifest"`
+	Payload     string                `json:"payload"`
 }
 
 type orchestratorResponse struct {
-	Success bool   `json:"success"`
-	Output  string `json:"output"`
+	Success         bool   `json:"success"`
+	Logs            string `json:"logs"`
+	Result          any    `json:"result"`
+	ExecutionTimeMs int64  `json:"execution_time_ms"`
+	ErrorMessage    string `json:"error_message"`
+	WorkerNode      string `json:"worker_node"`
 }
 
-func (o *orchestratorClient) Execute(ctx context.Context, manifest DeployRequestManifest, artifactBytes []byte) (*ExecuteResponse, error) {
-	dialer := net.Dialer{Timeout: o.timeout}
+func (o *orchestratorClient) Execute(ctx context.Context, manifest DeployRequestManifest, artifactBytes []byte, payload []byte) (*ExecuteResult, error) {
+	dialer := net.Dialer{Timeout: o.timeout + time.Second*time.Duration(manifest.Timeout)}
 	conn, err := dialer.DialContext(ctx, "unix", o.socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to orchestrator: %w", err)
@@ -56,6 +61,7 @@ func (o *orchestratorClient) Execute(ctx context.Context, manifest DeployRequest
 	request := orchestratorRequest{
 		ArtifactB64: base64.StdEncoding.EncodeToString(artifactBytes),
 		Manifest:    manifest,
+		Payload:     string(payload),
 	}
 	if err := writeOrchestratorMessage(conn, request); err != nil {
 		return nil, fmt.Errorf("failed to send request to orchestrator: %w", err)
@@ -66,7 +72,8 @@ func (o *orchestratorClient) Execute(ctx context.Context, manifest DeployRequest
 		return nil, fmt.Errorf("failed to read orchestrator response: %w", err)
 	}
 
-	return &ExecuteResponse{Success: resp.Success, Output: resp.Output}, nil
+	return &ExecuteResult{
+		Success: resp.Success, Logs: resp.Logs, ErrorMessage: resp.ErrorMessage, Result: resp.Result, ExecutionTimeMs: resp.ExecutionTimeMs, WorkerNode: resp.WorkerNode}, nil
 }
 
 func writeOrchestratorMessage(w io.Writer, v any) error {

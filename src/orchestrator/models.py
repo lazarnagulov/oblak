@@ -37,9 +37,36 @@ class ExecuteRequest:
       timeout=m.get("timeout", 5),
       memory=m.get("memory", 128),
     )
+  
+
+@dataclass
+class ExecuteResult:
+  success: bool
+  logs: str = ""
+  error_message: str = ""
+  result: any = None
+  execution_time_ms: int = 0
 
 
 @dataclass
 class ExecuteResponse:
   success: bool
-  output: str = ""
+  logs: str = ""
+  error_message: str = ""
+  result: any = None
+  execution_time_ms: int = 0
+  worker_node: str = ""
+  
+  def dict(self):
+    return {
+      "success": self.success,
+      "logs": self.logs,
+      "error_message": self.error_message,
+      "result": self.result,
+      "execution_time_ms": self.execution_time_ms,
+      "worker_node": self.worker_node,
+    }
+  
+
+class OrchestratorError(Exception):
+    pass

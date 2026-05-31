@@ -196,7 +196,6 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
         start_time = time.perf_counter()
         raw_output = await asyncio.wait_for(read_stream(fc_process.stdout), timeout=timeout + 1)
         end_time = time.perf_counter()
-        print(f"Raw output from sandbox:\n{raw_output}")
         execution_time_ms = int((end_time - start_time) * 1000)
 
         if "__OBLAK_START__" in raw_output and "__OBLAK_END__" in raw_output:
@@ -218,15 +217,11 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
                 success = False
 
         if success and "__OBLAK_RESULT_START__" in raw_output and "__OBLAK_RESULT_END__" in raw_output:
-            print("Extracting function result from logs")
             res_start = raw_output.index("__OBLAK_RESULT_START__") + len("__OBLAK_RESULT_START__")
             res_end = raw_output.index("__OBLAK_RESULT_END__")
             result_raw = raw_output[res_start:res_end].strip()
-            print("Raw result extracted:", result_raw)
-            print("Start index:", res_start, "End index:", res_end)
             try:
                 function_result = json.loads(result_raw)
-                print("Parsed function result:", function_result)
             except json.JSONDecodeError:
                 function_result = result_raw
         

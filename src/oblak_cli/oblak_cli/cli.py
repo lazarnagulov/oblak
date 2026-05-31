@@ -258,6 +258,28 @@ def invoke(
 
     rich.print(f"Async: {async_execution}")
 
+    try:
+        response = requests.post(
+            f"{auth.get_server_url()}/functions/{function_name}/invoke",
+            headers=auth.get_auth_headers(),
+            json={"payload": payload, "async": async_execution},
+        )
+        response.raise_for_status()
+        result = response.json()
+        rich.print("[bold green]Invocation successful![/bold green]")
+        if async_execution:
+            rich.print(f"Response: [bold blue]{result.get('message', 'Function invoked asynchronously.')}[/bold blue]")
+        else:
+            rich.print("Result: ")
+            rich.print_json(json.dumps(result))
+    except requests.exceptions.HTTPError:
+        if response.status_code == 404:
+            rich.print(f"[bold red]Error:[/bold red] Function '{function_name}' not found.")
+        else:
+            rich.print(f"[bold red]Error:[/bold red] {response.text}")
+    except Exception as e:
+        rich.print(f"[bold red]Error:[/bold red] {e}")
+
 @execution_app.command("list")
 def execution_list():
     rich.print("[bold cyan]EXECUTION LIST[/bold cyan]")

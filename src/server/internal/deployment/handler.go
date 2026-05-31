@@ -192,3 +192,55 @@ func (h *Handler) GenerateURL(c *gin.Context) {
 	accessURL := fmt.Sprintf("%s/execute/%s", h.apiURL, accessToken)
 	c.JSON(http.StatusOK, gin.H{"access_url": accessURL})
 }
+
+func (h *Handler) Invoke(c *gin.Context) {
+	name := c.Param("name")
+	userID := c.GetInt("userID")
+
+	var body []byte
+	var payload []byte = nil
+	var async bool
+	if c.Request.Body != nil {
+		var err error
+		body, err = io.ReadAll(c.Request.Body)
+		if err != nil && err != io.EOF {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+		if len(body) > 0 {
+			jsonBody := make(map[string]any)
+			if err := json.Unmarshal(body, &jsonBody); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Request body must be valid JSON"})
+				return
+			}
+			payloadValue, exists := jsonBody["payload"]
+			if exists {
+				payloadBytes, err := json.Marshal(payloadValue)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process payload"})
+					return
+				}
+				payload = payloadBytes
+			}
+			async = jsonBody["async"] == true
+		}
+	}
+
+	if async {
+		go h.service.Invoke(c.Request.Context(), userID, name, payload)
+		c.JSON(http.StatusAccepted, gin.H{"message": "Function invoked asynchronously"})
+		return
+	}
+
+	result, err := h.service.Invoke(c.Request.Context(), userID, name, payload)
+	if err != nil {
+		if errors.Is(err, ErrFunctionNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Function not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to invoke function"})
+		return
+	}
+
+	c.JSON(http.StatusOK, ExecuteResponse{Success: result.Success, Logs: result.Logs, ErrorMessage: result.ErrorMessage, Result: result.Result, ExecutionTimeMs: result.ExecutionTimeMs})
+}

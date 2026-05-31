@@ -66,12 +66,12 @@ func (r *sqlRepository) ListByUserID(ctx context.Context, userID int) ([]Functio
 }
 
 func (r *sqlRepository) GetByName(ctx context.Context, userID int, name string) (*Function, error) {
-	query := `SELECT id, name, runtime, handler_name, module_name, timeout_seconds, memory_mb, created_at 
+	query := `SELECT id, owner_id, name, runtime, handler_name, module_name, timeout_seconds, memory_mb, created_at 
               FROM functions WHERE owner_id = $1 AND name = $2`
 
 	f := &Function{}
 	err := r.db.QueryRowContext(ctx, query, userID, name).Scan(
-		&f.ID, &f.Name, &f.Runtime, &f.HandlerName, &f.ModuleName, &f.Timeout, &f.Memory, &f.CreatedAt,
+		&f.ID, &f.OwnerID, &f.Name, &f.Runtime, &f.HandlerName, &f.ModuleName, &f.Timeout, &f.Memory, &f.CreatedAt,
 	)
 	if err != nil {
 		return nil, err

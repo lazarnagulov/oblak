@@ -110,5 +110,6 @@ func getDefaultRateLimits() map[string]limiter.RateLimiterConfig {
 		"deploy":           {Capacity: 5, Refill: 0.1},
 		"execute_function": {Capacity: 5, Refill: 0.05},
 		"generate_url":     {Capacity: 20, Refill: 1.0},
+		"invoke_function":  {Capacity: 5, Refill: 0.05},
 	}
 }

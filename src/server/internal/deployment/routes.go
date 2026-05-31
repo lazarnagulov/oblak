@@ -14,7 +14,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		funcs.GET("/:name", h.rateLimit("describe_function"), h.Describe)
 		funcs.DELETE("/:name", h.rateLimit("delete_function"), h.Delete)
 		funcs.GET("/:name/generate-url", h.rateLimit("generate_url"), h.GenerateURL)
-		// funcs.POST("/:name/invoke", h.Invoke)
+		funcs.POST("/:name/invoke", h.rateLimit("invoke_function"), h.Invoke)
 	}
 
 	rg.POST("/execute/:token", h.rateLimit("execute_function"), h.ExecuteByTokenBody)

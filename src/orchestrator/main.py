@@ -28,16 +28,23 @@ async def write_message(writer: asyncio.StreamWriter, payload: dict):
     await writer.drain()
 
 def normalize_payload(raw_payload) -> dict:
-    print("Raw payload:", raw_payload)
     if raw_payload is None:
         return {}
+    print("Raw payload:", raw_payload)
     if isinstance(raw_payload, str):
         try:
             raw_payload = json.loads(raw_payload)
+            if isinstance(raw_payload, str):
+                raw_payload = json.loads(raw_payload)
         except (TypeError, ValueError):
             raise OrchestratorError("payload must be an object")
         except json.JSONDecodeError as e:
             raise OrchestratorError(f"payload is not valid JSON: {str(e)}")
+    print("Raw payload:", raw_payload)
+    print("Raw payload:", type(raw_payload))
+    if not isinstance(raw_payload, dict):
+        raise OrchestratorError("payload must be an object")
+    print("Raw payload:", raw_payload)
     for key in raw_payload.keys():
         if not isinstance(key, str):
             raise OrchestratorError("payload keys must be strings")

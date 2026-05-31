@@ -21,6 +21,7 @@ type Service interface {
 	Delete(ctx context.Context, userID int, name string) error
 	ExecuteByAccessToken(ctx context.Context, rawToken string, payload []byte) (*ExecuteResult, error)
 	GenerateAccessToken(ctx context.Context, userID int, name string) (string, error)
+	Invoke(ctx context.Context, userID int, name string, payload []byte) (*ExecuteResult, error)
 }
 
 type service struct {
@@ -157,6 +158,15 @@ func (s *service) GenerateAccessToken(ctx context.Context, userID int, name stri
 	}
 
 	return accessToken, nil
+}
+
+func (s *service) Invoke(ctx context.Context, userID int, name string, payload []byte) (*ExecuteResult, error) {
+	f, err := s.repo.GetByName(ctx, userID, name)
+	if err != nil {
+		return nil, ErrFunctionNotFound
+	}
+
+	return s.execute(ctx, f, payload)
 }
 
 func (s *service) hashArtifact(tee io.Reader) (string, error) {

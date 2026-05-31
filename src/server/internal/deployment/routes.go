@@ -17,5 +17,6 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		// funcs.POST("/:name/invoke", h.Invoke)
 	}
 
-	rg.GET("/execute/:token", h.rateLimit("execute_function"), h.ExecuteByToken)
+	rg.POST("/execute/:token", h.rateLimit("execute_function"), h.ExecuteByTokenBody)
+	rg.GET("/execute/:token", h.rateLimit("execute_function"), h.ExecuteByTokenQuery)
 }

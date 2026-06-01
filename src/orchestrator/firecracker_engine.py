@@ -9,9 +9,10 @@ import uuid
 import zipfile
 import http.client
 import time
+import sys
 from pathlib import Path
 
-from models import ExecuteResult, Manifest
+from models import ExecuteResult, Manifest, Status, OrchestratorError, RequirementsError
 
 from oblak_common.logger import setup_logger
 log = setup_logger("firecracker_engine") 
@@ -49,7 +50,25 @@ def create_payload_drive(artifact_bytes: bytes, manifest: Manifest, payload: dic
         
         with zipfile.ZipFile(io.BytesIO(artifact_bytes)) as zf:
             zf.extractall(tmp_path)
-            
+
+        req_file = tmp_path / "requirements.txt"
+        if req_file.exists():
+            log.info("Installing dependencies from requirements.txt")
+            try:
+                subprocess.run([
+                    sys.executable, "-m", "pip", "install",
+                    "-r", str(req_file),
+                    "-t", str(tmp_path),
+                    "--platform", "musllinux_1_2_x86_64",
+                    "--only-binary=:all:",
+                    "--python-version", "3.12"
+                ], capture_output=True, check=True)
+                log.info("Dependencies installed successfully")
+            except subprocess.CalledProcessError as e:
+                err = e.stderr.decode("utf-8", errors="ignore")
+                log.error("Failed to install dependencies: %s", err)
+                raise RequirementsError(f"Dependency installation failed: {err}")
+
         with open(tmp_path / "manifest.json", "w") as f:
             json.dump(manifest.dict(), f)
 
@@ -114,7 +133,7 @@ python3 /mnt/launcher.py
         with open(tmp_path / "run.sh", "w") as f:
             f.write(run_script)
             
-        subprocess.run(["dd", "if=/dev/zero", f"of={dest_ext4}", "bs=1M", "count=10"], capture_output=True, check=True)
+        subprocess.run(["dd", "if=/dev/zero", f"of={dest_ext4}", "bs=1M", "count=50"], capture_output=True, check=True)
         subprocess.run(["mkfs.ext4", "-F", "-d", str(tmp_path), str(dest_ext4)], capture_output=True, check=True)
 
 async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload: dict) -> ExecuteResult:
@@ -131,7 +150,7 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
     function_logs = ""
     function_result = None
     error_message = None
-    success = False
+    status = Status.SUCCESS
     execution_time_ms = 0
 
     try:
@@ -202,11 +221,11 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
             start_idx = raw_output.index("__OBLAK_START__") + len("__OBLAK_START__")
             end_idx = raw_output.index("__OBLAK_END__")
             function_logs = raw_output[start_idx:end_idx].strip()
-            success = True
+            status = Status.SUCCESS
         else:
             log.error(f"[{run_id}] Execution did not produce output markers. Log snippet:\n{raw_output[:2000]}")
             error_message = "Error: Sandbox execution failed unexpectedly."
-            success = False
+            status = Status.FAILED
 
         if "__OBLAK_ERROR_START__" in raw_output and "__OBLAK_ERROR_END__" in raw_output:
             err_start = raw_output.index("__OBLAK_ERROR_START__") + len("__OBLAK_ERROR_START__")
@@ -214,9 +233,9 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
             error_raw = raw_output[err_start:err_end].strip()
             if error_raw:
                 error_message = error_raw
-                success = False
+                status = Status.FAILED
 
-        if success and "__OBLAK_RESULT_START__" in raw_output and "__OBLAK_RESULT_END__" in raw_output:
+        if status == Status.SUCCESS and "__OBLAK_RESULT_START__" in raw_output and "__OBLAK_RESULT_END__" in raw_output:
             res_start = raw_output.index("__OBLAK_RESULT_START__") + len("__OBLAK_RESULT_START__")
             res_end = raw_output.index("__OBLAK_RESULT_END__")
             result_raw = raw_output[res_start:res_end].strip()
@@ -232,13 +251,18 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
         if fc_process:
             fc_process.kill()
         error_message = f"Error: Function timed out after {timeout} seconds."
-        success = False
+        status = Status.TIMEOUT
         execution_time_ms = timeout * 1000
         
+    except RequirementsError as e:
+        log.error(f"[{run_id}] Requirements error: {str(e)}")
+        error_message = f"Error occurred while installing requirements: {str(e)}"
+        status = Status.FAILED
+
     except Exception as e:
         log.error(f"[{run_id}] Infrastructure/System Error: {str(e)}", exc_info=True)
         error_message = "Error: Internal infrastructure error during sandbox initialization."
-        success = False
+        status = Status.FAILED
 
     finally:
         if fc_process and fc_process.returncode is None:
@@ -254,7 +278,7 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
             os.remove(payload_path)
 
     return ExecuteResult(
-         success=success, 
+         status=status, 
          logs=function_logs, 
          error_message=error_message, 
          result=function_result, 

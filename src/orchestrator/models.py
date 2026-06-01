@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Dict
 
 
 @dataclass
@@ -39,9 +40,15 @@ class ExecuteRequest:
     )
   
 
+class Status(Dict):
+    SUCCESS: str = "SUCCESS"
+    FAILED: str = "FAILED"
+    TIMEOUT: str = "TIMEOUT"
+    
+
 @dataclass
 class ExecuteResult:
-  success: bool
+  status: str = Status.SUCCESS
   logs: str = ""
   error_message: str = ""
   result: any = None
@@ -50,7 +57,7 @@ class ExecuteResult:
 
 @dataclass
 class ExecuteResponse:
-  success: bool
+  status: str = Status.SUCCESS
   logs: str = ""
   error_message: str = ""
   result: any = None
@@ -59,7 +66,7 @@ class ExecuteResponse:
   
   def dict(self):
     return {
-      "success": self.success,
+      "status": self.status,
       "logs": self.logs,
       "error_message": self.error_message,
       "result": self.result,
@@ -69,4 +76,7 @@ class ExecuteResponse:
   
 
 class OrchestratorError(Exception):
+    pass
+
+class RequirementsError(OrchestratorError):
     pass

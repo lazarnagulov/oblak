@@ -8,6 +8,8 @@ from typing import Optional
 import typer
 import rich
 from rich.table import Table
+from rich.panel import Panel
+from rich.syntax import Syntax
 
 from . import auth
 from . import manifest as oblak_manifest
@@ -270,8 +272,48 @@ def invoke(
         if async_execution:
             rich.print(f"Response: [bold blue]{result.get('message', 'Function invoked asynchronously.')}[/bold blue]")
         else:
-            rich.print("Result: ")
-            rich.print_json(json.dumps(result))
+            table = Table("Invocation Result", show_header=False)
+            table.add_column("Field", style="bold cyan")
+            table.add_column("Value")
+
+            table.add_row("ID", str(result.get("id")))
+            table.add_row("Status", result.get("status"))
+            table.add_row("Started At", str(result.get("started_at")))
+            table.add_row("Finished At", str(result.get("finished_at")))
+            table.add_row("Execution Time (ms)", str(result.get("execution_time_ms")))
+
+            rich.print(table)
+
+            if result.get("error_message"):
+                rich.print(
+                    Panel(
+                        result["error_message"],
+                        title="Error Message",
+                        border_style="red",
+                    )
+                )
+
+            if result.get("logs"):
+                rich.print(
+                    Panel(
+                        result["logs"],
+                        title="Logs",
+                        expand=True,
+                    )
+                )
+
+            if result.get("result"):
+                rich.print(
+                    Panel(
+                        Syntax(
+                            json.dumps(result["result"], indent=2),
+                            "json",
+                            word_wrap=True,
+                        ),
+                        title="Result",
+                    )
+                )
+
     except requests.exceptions.HTTPError:
         if response.status_code == 404:
             rich.print(f"[bold red]Error:[/bold red] Function '{function_name}' not found.")
@@ -281,19 +323,111 @@ def invoke(
         rich.print(f"[bold red]Error:[/bold red] {e}")
 
 @execution_app.command("list")
-def execution_list():
+def execution_list(function_name: str = typer.Argument(...),):
     rich.print("[bold cyan]EXECUTION LIST[/bold cyan]")
 
-    table = Table(title="Executions")
+    try:
+        response = requests.get(
+            f"{auth.get_server_url()}/functions/{function_name}/executions",
+            headers=auth.get_auth_headers(),
+            timeout=10,
+        )
+        response.raise_for_status()
+        executions = response.json().get("executions", [])
+        
+        if not executions:
+            rich.print("[yellow]No executions found.[/yellow]")
+            return
 
-    table.add_column("ID")
-    table.add_column("Function")
-    table.add_column("Status")
+        table = Table(title=f"Executions ({function_name})")
+        table.add_column("ID", style="cyan")
+        table.add_column("Status", style="green")
+        table.add_column("Started At", style="yellow")
+        table.add_column("Finished At", style="yellow")
+        table.add_column("Execution Time (ms)", style="blue")
 
-    table.add_row("exec-001", "hello-world", "SUCCESS")
-    table.add_row("exec-002", "data-parser", "RUNNING")
+        for exec in executions:
+            table.add_row(
+                str(exec.get("id")),
+                exec.get("status"),
+                exec.get("started_at"),
+                exec.get("finished_at"),
+                str(exec.get("execution_time_ms")),
+            )
 
-    rich.print(table)
+        rich.print(table)
+
+    except requests.exceptions.HTTPError:
+        if response.status_code == 404:
+            rich.print(f"[bold red]Error:[/bold red] Function '{function_name}' not found.")
+        else:
+            rich.print(f"[bold red]Error:[/bold red] Failed to fetch executions for function '{function_name}'.")
+    except Exception as e:
+        rich.print(f"[bold red]Error:[/bold red] {e}")
+
+@execution_app.command("describe")
+def execution_describe(execution_id: str = typer.Argument(...)):
+    rich.print("[bold cyan]EXECUTION DESCRIBE[/bold cyan]")
+    rich.print(f"Execution ID: {execution_id}")
+
+    try:
+        response = requests.get(
+            f"{auth.get_server_url()}/executions/{execution_id}",
+            headers=auth.get_auth_headers(),
+            timeout=10,
+        )
+        response.raise_for_status()
+        exec = response.json()
+        
+        table = Table(show_header=False)
+        table.add_column("Field", style="bold cyan")
+        table.add_column("Value")
+
+        table.add_row("ID", str(exec.get("id")))
+        table.add_row("Status", exec.get("status"))
+        table.add_row("Started At", str(exec.get("started_at")))
+        table.add_row("Finished At", str(exec.get("finished_at")))
+        table.add_row("Execution Time (ms)", str(exec.get("execution_time_ms")))
+
+        rich.print(table)
+
+        if exec.get("error_message"):
+            rich.print(
+                Panel(
+                    exec["error_message"],
+                    title="Error Message",
+                    border_style="red",
+                )
+            )
+
+        if exec.get("logs"):
+            rich.print(
+                Panel(
+                    exec["logs"],
+                    title="Logs",
+                    expand=True,
+                )
+            )
+
+        if exec.get("result"):
+            rich.print(
+                Panel(
+                    Syntax(
+                        json.dumps(exec["result"], indent=2),
+                        "json",
+                        word_wrap=True,
+                    ),
+                    title="Result",
+                )
+            )
+
+    except requests.exceptions.HTTPError:
+        if response.status_code == 404:
+            rich.print(f"[bold red]Error:[/bold red] Execution '{execution_id}' not found.")
+        else:
+            rich.print(f"[bold red]Error:[/bold red] Failed to fetch execution '{execution_id}'.")
+    except Exception as e:
+        rich.print(f"[bold red]Error:[/bold red] {e}")
 
 @config_app.command("show")
 def config_show():

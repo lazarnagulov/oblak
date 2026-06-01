@@ -36,12 +36,12 @@ type orchestratorRequest struct {
 }
 
 type orchestratorResponse struct {
-	Success         bool   `json:"success"`
-	Logs            string `json:"logs"`
-	Result          any    `json:"result"`
-	ExecutionTimeMs int64  `json:"execution_time_ms"`
-	ErrorMessage    string `json:"error_message"`
-	WorkerNode      string `json:"worker_node"`
+	Status          ExecutionStatus `json:"status"`
+	Logs            string          `json:"logs"`
+	Result          any             `json:"result"`
+	ExecutionTimeMs int64           `json:"execution_time_ms"`
+	ErrorMessage    string          `json:"error_message"`
+	WorkerNode      string          `json:"worker_node"`
 }
 
 func (o *orchestratorClient) Execute(ctx context.Context, manifest DeployRequestManifest, artifactBytes []byte, payload []byte) (*ExecuteResult, error) {
@@ -73,7 +73,7 @@ func (o *orchestratorClient) Execute(ctx context.Context, manifest DeployRequest
 	}
 
 	return &ExecuteResult{
-		Success: resp.Success, Logs: resp.Logs, ErrorMessage: resp.ErrorMessage, Result: resp.Result, ExecutionTimeMs: resp.ExecutionTimeMs, WorkerNode: resp.WorkerNode}, nil
+		Status: resp.Status, Logs: resp.Logs, ErrorMessage: resp.ErrorMessage, Result: resp.Result, ExecutionTimeMs: resp.ExecutionTimeMs, WorkerNode: resp.WorkerNode}, nil
 }
 
 func writeOrchestratorMessage(w io.Writer, v any) error {

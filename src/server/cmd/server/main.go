@@ -15,6 +15,16 @@ import (
 	"go.uber.org/zap"
 )
 
+// @title Oblak Serverless API
+// @version 1.0
+// @description This is the API for the Oblak Serverless platform.
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
+// @host localhost:8080
+// @BasePath /api/v1
 func main() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("warning: .env file not found")

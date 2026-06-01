@@ -105,11 +105,13 @@ func getEnvDurationSeconds(key string, fallbackSeconds int) time.Duration {
 
 func getDefaultRateLimits() map[string]limiter.RateLimiterConfig {
 	return map[string]limiter.RateLimiterConfig{
-		"default":          {Capacity: 10, Refill: 1.0},
-		"login":            {Capacity: 5, Refill: 0.05},
-		"deploy":           {Capacity: 5, Refill: 0.1},
-		"execute_function": {Capacity: 5, Refill: 0.05},
-		"generate_url":     {Capacity: 20, Refill: 1.0},
-		"invoke_function":  {Capacity: 5, Refill: 0.05},
+		"default":            {Capacity: 10, Refill: 1.0},
+		"login":              {Capacity: 5, Refill: 0.05},
+		"deploy":             {Capacity: 5, Refill: 0.1},
+		"execute_function":   {Capacity: 5, Refill: 0.05},
+		"generate_url":       {Capacity: 20, Refill: 1.0},
+		"invoke_function":    {Capacity: 5, Refill: 0.05},
+		"list_executions":    {Capacity: 50, Refill: 2.0},
+		"describe_execution": {Capacity: 100, Refill: 5.0},
 	}
 }

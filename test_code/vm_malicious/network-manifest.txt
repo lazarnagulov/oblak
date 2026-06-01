@@ -1,0 +1,6 @@
+name = "network.py"
+runtime = "python3.12"
+module = "network"
+handler = "handler"
+timeout = 10
+memory = 128

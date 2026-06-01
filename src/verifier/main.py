@@ -11,14 +11,11 @@ import zipfile
 from checks import zip_safety, pattern_check, bandit_check, requirements_check, llm_check
 from models import CheckResult, VerifyRequest, VerifyResponse
 
+from oblak_common.logger import setup_logger
+log = setup_logger("verifier")
+
 HOST = "127.0.0.1"
 PORT = 9876
-
-logging.basicConfig(
-  level=logging.INFO,
-  format="%(asctime)s [%(levelname)s] %(message)s",
-)
-log = logging.getLogger("verifier")
 
 
 # 4-byte length-prefixed JSON protocol

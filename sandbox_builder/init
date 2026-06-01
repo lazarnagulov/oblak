@@ -1,0 +1,21 @@
+#!/bin/sh
+
+# Mount essential pseudo-filesystems
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+
+# Mount the payload drive attached by Firecracker
+mount -t ext4 /dev/vdb /mnt
+
+# Redirect all standard output/error to the serial console so the Orchestrator can read it
+exec >/dev/ttyS0 2>&1
+
+# Change to the payload directory
+cd /mnt
+
+# Execute the runner script
+/bin/sh /mnt/run.sh
+
+# Flush buffers and force shut down the VM
+sync
+reboot -f

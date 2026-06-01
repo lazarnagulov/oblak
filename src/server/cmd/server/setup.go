@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazarnagulov/oblak/server/internal/auth"
@@ -48,8 +49,11 @@ func setupDependencies(cfg *config.AppConfig, log *zap.Logger) (*Application, er
 	r.RegisterRoutes(authHandler)
 
 	deploymentRepo := deployment.NewRepository(database)
-	deploymentService := deployment.NewService(minioStorage, deploymentRepo, log)
-	deploymentHandler := deployment.NewHandler(deploymentService, authService, limitHandler, log)
+	orchestratorClient := deployment.NewOrchestratorClient(cfg.Orchestrator)
+	accessTokenTTL := time.Duration(cfg.AccessURLTTLMinutes) * time.Minute
+	deploymentService := deployment.NewService(minioStorage, deploymentRepo, orchestratorClient, accessTokenTTL, log)
+	apiURL := cfg.ApiURL
+	deploymentHandler := deployment.NewHandler(deploymentService, authService, limitHandler, apiURL, log)
 	r.RegisterRoutes(deploymentHandler)
 
 	return &Application{

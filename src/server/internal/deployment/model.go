@@ -1,6 +1,7 @@
 package deployment
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,6 +62,72 @@ type FunctionListResponse struct {
 	Runtime string `json:"runtime" example:"python3.10"`
 }
 
+type ExecuteResult struct {
+	ID              int64           `json:"id"`
+	Status          ExecutionStatus `json:"status"`
+	Logs            string          `json:"logs"`
+	ErrorMessage    string          `json:"error_message"`
+	Result          any             `json:"result"`
+	ExecutionTimeMs int64           `json:"execution_time_ms"`
+	WorkerNode      string          `json:"worker_node"`
+	StartedAt       *time.Time      `json:"started_at,omitempty"`
+	FinishedAt      *time.Time      `json:"finished_at,omitempty"`
+}
+
+type ExecuteResponse struct {
+	ID              int64           `json:"id"`
+	Status          ExecutionStatus `json:"status"`
+	Logs            string          `json:"logs"`
+	ErrorMessage    string          `json:"error_message,omitempty"`
+	Result          any             `json:"result"`
+	ExecutionTimeMs int64           `json:"execution_time_ms"`
+	StartedAt       *time.Time      `json:"started_at,omitempty"`
+	FinishedAt      *time.Time      `json:"finished_at,omitempty"`
+}
+
+type ExecutionStatus string
+
+const (
+	ExecutionStatusPending ExecutionStatus = "PENDING"
+	ExecutionStatusRunning ExecutionStatus = "RUNNING"
+	ExecutionStatusSuccess ExecutionStatus = "SUCCESS"
+	ExecutionStatusFailed  ExecutionStatus = "FAILED"
+	ExecutionStatusTimeout ExecutionStatus = "TIMEOUT"
+)
+
+type ExecutionRecord struct {
+	ID              int64           `json:"id" db:"id"`
+	FunctionID      uuid.UUID       `json:"function_id" db:"function_id"`
+	Status          ExecutionStatus `json:"status" db:"status"`
+	StartedAt       *time.Time      `json:"started_at" db:"started_at"`
+	FinishedAt      *time.Time      `json:"finished_at" db:"finished_at"`
+	ExecutionTimeMs int64           `json:"execution_time_ms" db:"execution_time_ms"`
+	Logs            string          `json:"logs" db:"logs"`
+	ResultData      string          `json:"result_data" db:"result_data"`
+	ErrorMessage    string          `json:"error_message" db:"error_message"`
+	WorkerNode      string          `json:"worker_node" db:"worker_node"`
+	CreatedAt       time.Time       `json:"created_at" db:"created_at"`
+}
+
+type ExecutionRecordResponse struct {
+	ID              int64           `json:"id"`
+	Status          ExecutionStatus `json:"status"`
+	StartedAt       *time.Time      `json:"started_at"`
+	FinishedAt      *time.Time      `json:"finished_at"`
+	ExecutionTimeMs int64           `json:"execution_time_ms"`
+	Logs            string          `json:"logs"`
+	Result          any             `json:"result"`
+	ErrorMessage    string          `json:"error_message,omitempty"`
+}
+
+type ExecutionRecordSummary struct {
+	ID              int64           `json:"id"`
+	Status          ExecutionStatus `json:"status"`
+	StartedAt       *time.Time      `json:"started_at"`
+	FinishedAt      *time.Time      `json:"finished_at"`
+	ExecutionTimeMs int64           `json:"execution_time_ms"`
+}
+
 func ToListResponse(f *Function) FunctionListResponse {
 	return FunctionListResponse{
 		Name:    f.Name,
@@ -78,5 +145,38 @@ func ToResponse(f *Function) FunctionResponse {
 		Timeout:     f.Timeout,
 		Memory:      f.Memory,
 		CreatedAt:   f.CreatedAt,
+	}
+}
+
+func ToExecutionRecordSummary(r *ExecutionRecord) ExecutionRecordSummary {
+	return ExecutionRecordSummary{
+		ID:              r.ID,
+		Status:          r.Status,
+		StartedAt:       r.StartedAt,
+		FinishedAt:      r.FinishedAt,
+		ExecutionTimeMs: r.ExecutionTimeMs,
+	}
+}
+
+func ToExecutionRecordResponse(r *ExecutionRecord) ExecutionRecordResponse {
+	result := any(nil)
+	if r.ResultData != "" {
+		var jsonData any
+		if err := json.Unmarshal([]byte(r.ResultData), &jsonData); err == nil {
+			result = jsonData
+		} else {
+			result = r.ResultData
+		}
+	}
+
+	return ExecutionRecordResponse{
+		ID:              r.ID,
+		Status:          r.Status,
+		StartedAt:       r.StartedAt,
+		FinishedAt:      r.FinishedAt,
+		ExecutionTimeMs: r.ExecutionTimeMs,
+		Logs:            r.Logs,
+		Result:          result,
+		ErrorMessage:    r.ErrorMessage,
 	}
 }

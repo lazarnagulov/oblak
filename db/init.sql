@@ -29,17 +29,16 @@ CREATE TABLE IF NOT EXISTS functions (
 );
 
 CREATE TABLE IF NOT EXISTS executions (
-    id UUID PRIMARY KEY,
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     function_id UUID NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
     status VARCHAR(30) NOT NULL,
     started_at TIMESTAMP,
     finished_at TIMESTAMP,
-    exit_code INT,
     execution_time_ms INT,
-    stdout_key TEXT,
-    stderr_key TEXT,
+    logs TEXT,
+    result_data TEXT,
     error_message TEXT,
-    wroker_node VARCHAR(100),
+    worker_node VARCHAR(100),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
     CONSTRAINT chk_ExecutionStatus CHECK (status IN (
@@ -51,6 +50,14 @@ CREATE TABLE IF NOT EXISTS executions (
     )) 
 );
 
+CREATE TABLE IF NOT EXISTS function_access_tokens (
+    id SERIAL PRIMARY KEY,
+    function_id UUID NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_functions_owner_id
     ON functions(owner_id);
 
@@ -59,6 +66,9 @@ CREATE INDEX IF NOT EXISTS idx_executions_status
 
 CREATE INDEX IF NOT EXISTS idx_executions_function_id
     ON executions(function_id);
+
+CREATE INDEX IF NOT EXISTS idx_function_access_tokens_function_id
+    ON function_access_tokens(function_id);
 
 INSERT INTO users (username, password_hash) 
 VALUES ('lazar', '$2a$10$wFRsfsXjMRaLaDN/wJ6AQuIIanU0v6Kk/QUpo0v5x.mWPy.KYTYgC')

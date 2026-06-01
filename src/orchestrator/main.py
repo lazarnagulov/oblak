@@ -5,16 +5,15 @@ import json
 import logging
 import struct
 import sys
-import socket
 from firecracker_engine import execute_in_sandbox
-from models import Manifest, ExecuteRequest, ExecuteResponse, OrchestratorError
+from models import Manifest, ExecuteRequest, ExecuteResponse, OrchestratorError, Status
 
 logging.basicConfig(
   level=logging.INFO, 
   format="%(asctime)s [%(levelname)s] %(message)s"
 )
 log = logging.getLogger("orchestrator")
-WORKER_NODE = socket.gethostname()
+WORKER_NODE = os.getenv("WORKER_NODE", "linux-worker")
 
 async def read_message(reader: asyncio.StreamReader):
     length_bytes = await reader.readexactly(4)
@@ -28,9 +27,8 @@ async def write_message(writer: asyncio.StreamWriter, payload: dict):
     await writer.drain()
 
 def normalize_payload(raw_payload) -> dict:
-    if raw_payload is None:
+    if raw_payload is None or raw_payload == "" or raw_payload == {} or raw_payload == [] or raw_payload == "null":
         return {}
-    print("Raw payload:", raw_payload)
     if isinstance(raw_payload, str):
         try:
             raw_payload = json.loads(raw_payload)
@@ -40,11 +38,8 @@ def normalize_payload(raw_payload) -> dict:
             raise OrchestratorError("payload must be an object")
         except json.JSONDecodeError as e:
             raise OrchestratorError(f"payload is not valid JSON: {str(e)}")
-    print("Raw payload:", raw_payload)
-    print("Raw payload:", type(raw_payload))
     if not isinstance(raw_payload, dict):
         raise OrchestratorError("payload must be an object")
-    print("Raw payload:", raw_payload)
     for key in raw_payload.keys():
         if not isinstance(key, str):
             raise OrchestratorError("payload keys must be strings")
@@ -54,7 +49,7 @@ async def run_in_firecracker(manifest: Manifest, artifact_bytes: bytes, payload:
     result = await execute_in_sandbox(manifest, artifact_bytes, payload)
     
     return ExecuteResponse(
-        success=result.success,
+        status=result.status,
         logs=result.logs,
         error_message=result.error_message,
         result=result.result,
@@ -82,11 +77,11 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
     except OrchestratorError as e:
         log.error("Orchestrator error: %s", e)
-        result = ExecuteResponse(success=False, logs="", error_message=str(e), result=None, execution_time_ms=0, worker_node=WORKER_NODE)
+        result = ExecuteResponse(status=Status.FAILED, logs="", error_message=str(e), result=None, execution_time_ms=0, worker_node=WORKER_NODE)
         await write_message(writer, result.dict())
     except Exception as e:
         log.error("Unhandled error in orchestrator: %s", e)
-        result = ExecuteResponse(success=False, logs="", error_message="Internal orchestrator error", result=None, execution_time_ms=0, worker_node=WORKER_NODE)
+        result = ExecuteResponse(status=Status.FAILED, logs="", error_message="Internal orchestrator error", result=None, execution_time_ms=0, worker_node=WORKER_NODE)
         await write_message(writer, result.dict())
     finally:
         writer.close()

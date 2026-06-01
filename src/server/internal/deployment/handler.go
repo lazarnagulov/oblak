@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazarnagulov/oblak/server/internal/auth"
@@ -172,7 +173,7 @@ func (h *Handler) executeByToken(c *gin.Context, payload []byte) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ExecuteResponse{Success: result.Success, Logs: result.Logs, ErrorMessage: result.ErrorMessage, Result: result.Result, ExecutionTimeMs: result.ExecutionTimeMs})
+	c.JSON(http.StatusOK, ExecuteResponse{Status: result.Status, Logs: result.Logs, ErrorMessage: result.ErrorMessage, Result: result.Result, ExecutionTimeMs: result.ExecutionTimeMs})
 }
 
 func (h *Handler) GenerateURL(c *gin.Context) {
@@ -242,5 +243,52 @@ func (h *Handler) Invoke(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ExecuteResponse{Success: result.Success, Logs: result.Logs, ErrorMessage: result.ErrorMessage, Result: result.Result, ExecutionTimeMs: result.ExecutionTimeMs})
+	c.JSON(http.StatusOK, ExecuteResponse{ID: result.ID, Status: result.Status, Logs: result.Logs, ErrorMessage: result.ErrorMessage, Result: result.Result, ExecutionTimeMs: result.ExecutionTimeMs, StartedAt: result.StartedAt, FinishedAt: result.FinishedAt})
+}
+
+func (h *Handler) ListExecutions(c *gin.Context) {
+	name := c.Param("name")
+	userID := c.GetInt("userID")
+
+	executions, err := h.service.ListExecutions(c.Request.Context(), userID, name)
+	if err != nil {
+		if errors.Is(err, ErrFunctionNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Function not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch execution records"})
+		return
+	}
+
+	var response []ExecutionRecordSummary
+	for _, record := range executions {
+		response = append(response, ToExecutionRecordSummary(&record))
+	}
+
+	c.JSON(http.StatusOK, gin.H{"executions": response})
+}
+
+func (h *Handler) DescribeExecution(c *gin.Context) {
+	userID := c.GetInt("userID")
+
+	executionIDStr := c.Param("execution_id")
+	executionID, err := strconv.ParseInt(executionIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
+		return
+	}
+	h.log.Info("Fetching execution record", zap.Int64("executionID", executionID), zap.Int("userID", userID))
+
+	record, err := h.service.DescribeExecution(c.Request.Context(), executionID, userID)
+	if err != nil {
+		h.log.Error("Failed to fetch execution record", zap.Int64("executionID", executionID), zap.Int("userID", userID), zap.Error(err))
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Execution record not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch execution record"})
+		return
+	}
+
+	c.JSON(http.StatusOK, ToExecutionRecordResponse(record))
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"time"
@@ -22,6 +23,8 @@ type Service interface {
 	ExecuteByAccessToken(ctx context.Context, rawToken string, payload []byte) (*ExecuteResult, error)
 	GenerateAccessToken(ctx context.Context, userID int, name string) (string, error)
 	Invoke(ctx context.Context, userID int, name string, payload []byte) (*ExecuteResult, error)
+	ListExecutions(ctx context.Context, userID int, name string) ([]ExecutionRecord, error)
+	DescribeExecution(ctx context.Context, executionID int64, userID int) (*ExecutionRecord, error)
 }
 
 type service struct {
@@ -169,6 +172,19 @@ func (s *service) Invoke(ctx context.Context, userID int, name string, payload [
 	return s.execute(ctx, f, payload)
 }
 
+func (s *service) ListExecutions(ctx context.Context, userID int, name string) ([]ExecutionRecord, error) {
+	f, err := s.repo.GetByName(ctx, userID, name)
+	if err != nil {
+		return nil, ErrFunctionNotFound
+	}
+
+	return s.repo.GetExecutionsByFunctionID(ctx, f.ID)
+}
+
+func (s *service) DescribeExecution(ctx context.Context, executionID int64, userID int) (*ExecutionRecord, error) {
+	return s.repo.GetExecutionByID(ctx, executionID, userID)
+}
+
 func (s *service) hashArtifact(tee io.Reader) (string, error) {
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, tee); err != nil {
@@ -224,11 +240,47 @@ func (s *service) execute(ctx context.Context, f *Function, payload []byte) (*Ex
 		Memory:  f.Memory,
 	}
 
+	start := time.Now()
+	createdRecord, err := s.repo.CreateExecutionRecord(ctx, &ExecutionRecord{
+		FunctionID: f.ID,
+		StartedAt:  &start,
+		FinishedAt: nil,
+		Status:     ExecutionStatusRunning,
+	})
+
 	result, err := s.orchestrator.Execute(ctx, manifest, artifactBytes, payload)
+	end := time.Now()
 	if err != nil {
 		s.log.Error("Orchestrator execution failed", zap.Error(err))
+		s.repo.UpdateExecutionRecord(ctx, &ExecutionRecord{
+			ID:           createdRecord.ID,
+			FunctionID:   f.ID,
+			FinishedAt:   &end,
+			Status:       ExecutionStatusFailed,
+			ErrorMessage: err.Error(),
+		})
 		return nil, fmt.Errorf("orchestrator execution failed")
 	}
+
+	resultData, err := json.Marshal(result.Result)
+	if err != nil {
+		s.log.Error("Failed to marshal execution result", zap.Error(err))
+		resultData = nil
+	}
+	s.repo.UpdateExecutionRecord(ctx, &ExecutionRecord{
+		ID:              createdRecord.ID,
+		FunctionID:      f.ID,
+		FinishedAt:      &end,
+		Status:          result.Status,
+		ExecutionTimeMs: result.ExecutionTimeMs,
+		Logs:            result.Logs,
+		ResultData:      string(resultData),
+		ErrorMessage:    result.ErrorMessage,
+		WorkerNode:      result.WorkerNode,
+	})
+	result.ID = createdRecord.ID
+	result.StartedAt = &start
+	result.FinishedAt = &end
 
 	return result, nil
 }

@@ -17,6 +17,10 @@ type Repository interface {
 	CreateAccessToken(ctx context.Context, functionID string, tokenHash string, expiresAt time.Time) error
 	DeleteAccessTokensByFunctionID(ctx context.Context, functionID uuid.UUID) error
 	GetByAccessToken(ctx context.Context, tokenHash string) (*Function, error)
+	CreateExecutionRecord(ctx context.Context, record *ExecutionRecord) (*ExecutionRecord, error)
+	UpdateExecutionRecord(ctx context.Context, record *ExecutionRecord) error
+	GetExecutionsByFunctionID(ctx context.Context, functionID uuid.UUID) ([]ExecutionRecord, error)
+	GetExecutionByID(ctx context.Context, executionID int64, userID int) (*ExecutionRecord, error)
 }
 
 type sqlRepository struct {
@@ -126,4 +130,120 @@ func (r *sqlRepository) GetByAccessToken(ctx context.Context, tokenHash string) 
 		return nil, err
 	}
 	return f, nil
+}
+
+func (r *sqlRepository) CreateExecutionRecord(ctx context.Context, record *ExecutionRecord) (*ExecutionRecord, error) {
+	query := `
+		INSERT INTO executions (function_id, status, started_at, finished_at, execution_time_ms, logs, result_data, error_message, worker_node, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+		RETURNING id
+	`
+	err := r.db.QueryRowContext(ctx, query,
+		record.FunctionID, record.Status, record.StartedAt, record.FinishedAt,
+		record.ExecutionTimeMs, record.Logs, record.ResultData, record.ErrorMessage, record.WorkerNode,
+	).Scan(&record.ID)
+	if err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+func (r *sqlRepository) UpdateExecutionRecord(ctx context.Context, record *ExecutionRecord) error {
+	query := `
+		UPDATE executions
+		SET status = $1, finished_at = $2, execution_time_ms = $3, logs = $4, result_data = $5, error_message = $6, worker_node = $7
+		WHERE id = $8
+	`
+	_, err := r.db.ExecContext(ctx, query,
+		record.Status, record.FinishedAt, record.ExecutionTimeMs, record.Logs,
+		record.ResultData, record.ErrorMessage, record.WorkerNode, record.ID,
+	)
+	return err
+}
+
+func (r *sqlRepository) GetExecutionsByFunctionID(ctx context.Context, functionID uuid.UUID) ([]ExecutionRecord, error) {
+	query := `
+		SELECT id, function_id, status, started_at, finished_at, execution_time_ms, logs, result_data, error_message, worker_node
+		FROM executions
+		WHERE function_id = $1
+		ORDER BY started_at DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, functionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []ExecutionRecord
+	for rows.Next() {
+		record, err := scanExecutionRecord(rows)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, *record)
+	}
+	return records, nil
+}
+
+func (r *sqlRepository) GetExecutionByID(ctx context.Context, executionID int64, userID int) (*ExecutionRecord, error) {
+	query := `
+		SELECT
+			e.id,
+			e.function_id,
+			e.status,
+			e.started_at,
+			e.finished_at,
+			e.execution_time_ms,
+			e.logs,
+			e.result_data,
+			e.error_message,
+			e.worker_node
+		FROM executions e
+		JOIN functions f ON e.function_id = f.id
+		WHERE e.id = $1
+		AND f.owner_id = $2`
+
+	record, err := scanExecutionRecord(r.db.QueryRowContext(ctx, query, executionID, userID))
+	if err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+func scanExecutionRecord(scanner interface{ Scan(dest ...any) error }) (*ExecutionRecord, error) {
+	record := &ExecutionRecord{}
+
+	var startedAt, finishedAt sql.NullTime
+	var logs, resultData, errorMessage, workerNode sql.NullString
+
+	err := scanner.Scan(
+		&record.ID,
+		&record.FunctionID,
+		&record.Status,
+		&startedAt,
+		&finishedAt,
+		&record.ExecutionTimeMs,
+		&logs,
+		&resultData,
+		&errorMessage,
+		&workerNode,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if startedAt.Valid {
+		record.StartedAt = &startedAt.Time
+	}
+
+	if finishedAt.Valid {
+		record.FinishedAt = &finishedAt.Time
+	}
+
+	record.Logs = logs.String
+	record.ResultData = resultData.String
+	record.ErrorMessage = errorMessage.String
+	record.WorkerNode = workerNode.String
+
+	return record, nil
 }

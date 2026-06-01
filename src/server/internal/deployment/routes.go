@@ -15,6 +15,12 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		funcs.DELETE("/:name", h.rateLimit("delete_function"), h.Delete)
 		funcs.GET("/:name/generate-url", h.rateLimit("generate_url"), h.GenerateURL)
 		funcs.POST("/:name/invoke", h.rateLimit("invoke_function"), h.Invoke)
+		funcs.GET("/:name/executions", h.rateLimit("list_executions"), h.ListExecutions)
+	}
+	executions := rg.Group("/executions")
+	executions.Use(httputil.RequireAPIKey(h.authService, h.log))
+	{
+		executions.GET("/:execution_id", h.rateLimit("describe_execution"), h.DescribeExecution)
 	}
 
 	rg.POST("/execute/:token", h.rateLimit("execute_function"), h.ExecuteByTokenBody)

@@ -10,11 +10,11 @@ import zipfile
 import http.client
 import time
 from pathlib import Path
-import logging
 
 from models import ExecuteResult, Manifest
 
-log = logging.getLogger("firecracker_engine")
+from oblak_common.logger import setup_logger
+log = setup_logger("firecracker_engine") 
 
 WORKSPACE = Path.home() / "oblak_firecracker"
 FIRECRACKER_BIN = WORKSPACE / "firecracker"

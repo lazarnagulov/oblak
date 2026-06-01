@@ -2,18 +2,15 @@ import asyncio
 import base64
 import os
 import json
-import logging
 import struct
 import sys
 import socket
 from firecracker_engine import execute_in_sandbox
 from models import Manifest, ExecuteRequest, ExecuteResponse, OrchestratorError
 
-logging.basicConfig(
-  level=logging.INFO, 
-  format="%(asctime)s [%(levelname)s] %(message)s"
-)
-log = logging.getLogger("orchestrator")
+from oblak_common.logger import setup_logger
+log = setup_logger("orchestrator")
+
 WORKER_NODE = socket.gethostname()
 
 async def read_message(reader: asyncio.StreamReader):

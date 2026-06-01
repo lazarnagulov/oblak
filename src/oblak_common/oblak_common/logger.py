@@ -2,18 +2,18 @@ import logging
 import logging.handlers
 import os, sys
 
-class SanitizeFilter:
+class SanitizeFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.msg = str(record.msg).replace("\n", "\\n").replace("\r", "\\r")
         if record.args:
             if isinstance(record.args, dict):
                 record.args = {
-                    k: str(v).replace("\n", "\\n").replace("\r", "\\r") if isinstance(v, str) else v
+                    k: str(v).replace("\n", "\\n").replace("\r", "\\r")
                     for k, v in record.args.items()
                 }
             else:
                 record.args = tuple(
-                    str(a).replace("\n", "\\n").replace("\r", "\\r") if isinstance(a, str) else a
+                    str(a).replace("\n", "\\n").replace("\r", "\\r")
                     for a in record.args
                 )
         return True
@@ -30,7 +30,8 @@ def _make_file_handler(log_dir: str, name: str) -> logging.Handler:
 
 def setup_logger(name: str) -> logging.Logger:
     log = logging.getLogger(name)
-    log.setLevel(logging.INFO)
+    LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+    log.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] [PID:%(process)d] %(message)s",

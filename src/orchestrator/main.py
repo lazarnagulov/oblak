@@ -73,6 +73,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         artifact_bytes = base64.b64decode(request.artifact_b64)
         result = await run_in_firecracker(manifest, artifact_bytes, payload)
 
+        log.info(f"Execution of '{manifest.name}' completed with status: {result.status}")
         await write_message(writer, result.dict())
 
     except OrchestratorError as e:

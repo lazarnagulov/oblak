@@ -1,0 +1,6 @@
+name = "pip_test"
+runtime = "python3.12"
+module = "pip_test"
+handler = "test_emoji"
+timeout = 5
+memory = 128

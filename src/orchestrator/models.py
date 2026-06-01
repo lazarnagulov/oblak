@@ -77,3 +77,6 @@ class ExecuteResponse:
 
 class OrchestratorError(Exception):
     pass
+
+class RequirementsError(OrchestratorError):
+    pass

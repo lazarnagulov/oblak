@@ -1,6 +1,10 @@
 import logging
 import logging.handlers
-import os, sys
+import os,sys
+from dotenv import load_dotenv
+
+load_dotenv()
+log_root = os.getenv("APP_ROOT", None)
 
 class SanitizeFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -29,8 +33,13 @@ def _make_file_handler(log_dir: str, name: str) -> logging.Handler:
     return handler
 
 def setup_logger(name: str) -> logging.Logger:
+    if log_root is None:
+        raise ValueError("APP_ROOT environment variable must be set for logging to work.")
+    
+    os.makedirs(os.path.join(log_root, "logs"), exist_ok=True)
+
     log = logging.getLogger(name)
-    LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
     log.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 
     formatter = logging.Formatter(
@@ -42,10 +51,7 @@ def setup_logger(name: str) -> logging.Logger:
     console_handler.setFormatter(formatter)
     log.addHandler(console_handler)
 
-    if sys.platform == "linux":
-        log_dir = f"/var/log/oblak/{name}"
-    else:
-        log_dir = os.path.join(os.path.dirname(__file__), "..", "..", "logs", name)
+    log_dir = os.path.join(log_root, "logs", name)
 
     file_handler = _make_file_handler(log_dir, name)
     file_handler.setFormatter(formatter)

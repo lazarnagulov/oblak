@@ -11,16 +11,12 @@ import (
 )
 
 func resolveLogPath(env string) (string, error) {
-	if env == "production" {
-		return "/var/log/oblak/server/server.log", nil
-	}
-
 	root := os.Getenv("APP_ROOT")
 	if root == "" {
 		return "", fmt.Errorf("APP_ROOT env variable not set")
 	}
 
-	logPath := filepath.Join(root, "src", "logs", "server", "server.log")
+	logPath := filepath.Join(root, "logs", "server", "server.log")
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return "", fmt.Errorf("failed to create log directory: %w", err)
 	}

@@ -12,10 +12,10 @@ import time
 import sys
 from pathlib import Path
 
-from models import ExecuteResult, Manifest, Status, OrchestratorError, RequirementsError
+from models import ExecuteResult, Manifest, Status, RequirementsError
 
 from oblak_common.logger import setup_logger
-log = setup_logger("firecracker_engine") 
+log = setup_logger("orchestrator") 
 
 WORKSPACE = Path.home() / "oblak_firecracker"
 FIRECRACKER_BIN = WORKSPACE / "firecracker"
@@ -143,8 +143,6 @@ async def execute_in_sandbox(manifest: Manifest, artifact_bytes: bytes, payload:
     
     timeout = manifest.timeout
     memory = manifest.memory
-    module = manifest.module
-    handler = manifest.handler
 
     fc_process = None
     function_logs = ""

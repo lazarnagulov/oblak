@@ -2,18 +2,24 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/lazarnagulov/oblak/server/internal/config"
 	"github.com/lazarnagulov/oblak/server/internal/platform/logger"
 	"go.uber.org/zap"
 )
 
 func main() {
+	if err := godotenv.Load(); err != nil {
+		fmt.Println("warning: .env file not found")
+	}
+
 	env := os.Getenv("APP_ENV")
 	if env == "" {
 		env = "development"
@@ -21,7 +27,7 @@ func main() {
 
 	log, err := logger.New(env)
 	if err != nil {
-		panic("Failed to create logger")
+		panic("Failed to create logger: " + err.Error())
 	}
 	defer log.Sync()
 

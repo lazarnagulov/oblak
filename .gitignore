@@ -13,8 +13,15 @@
 [Ss]cripts
 pyvenv.cfg
 .venv
+venv/
 pip-selfcheck.json
 .env
 # End of https://www.toptal.com/developers/gitignore/api/venv
 
+*.egg
+*.egg-info/
 __pycache__
+
+src/logs/
+logs/
+*.log

@@ -3,45 +3,55 @@ package deployment
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 type Service interface {
-	Deploy(ctx context.Context, userID int, manifest DeployRequestManifest, artifactReader io.Reader) error
+	Deploy(ctx context.Context, userID int, manifest DeployRequestManifest, artifactReader io.Reader) (string, error)
 	ListByUserID(ctx context.Context, userID int) ([]Function, error)
 	GetByName(ctx context.Context, userID int, name string) (*Function, error)
 	Delete(ctx context.Context, userID int, name string) error
+	ExecuteByAccessToken(ctx context.Context, rawToken string, payload []byte) (*ExecuteResult, error)
+	GenerateAccessToken(ctx context.Context, userID int, name string) (string, error)
+	Invoke(ctx context.Context, userID int, name string, payload []byte) (*ExecuteResult, error)
+	ListExecutions(ctx context.Context, userID int, name string) ([]ExecutionRecord, error)
+	DescribeExecution(ctx context.Context, executionID int64, userID int) (*ExecutionRecord, error)
 }
 
 type service struct {
-	log     *zap.Logger
-	repo    Repository
-	storage ArtifactStorage
+	log          *zap.Logger
+	repo         Repository
+	storage      ArtifactStorage
+	orchestrator OrchestratorClient
+	tokenTTL     time.Duration
 }
 
-func NewService(storage ArtifactStorage, repo Repository, log *zap.Logger) Service {
-	return &service{storage: storage, repo: repo, log: log}
+func NewService(storage ArtifactStorage, repo Repository, orchestrator OrchestratorClient, tokenTTL time.Duration, log *zap.Logger) Service {
+	return &service{storage: storage, repo: repo, orchestrator: orchestrator, tokenTTL: tokenTTL, log: log}
 }
 
-func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequestManifest, artifactReader io.Reader) error {
+func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequestManifest, artifactReader io.Reader) (string, error) {
 	exists, err := s.repo.Exists(ctx, userID, manifest.Name)
 	if err != nil {
 		s.log.Error("Database check failed", zap.Error(err))
-		return fmt.Errorf("database check failed")
+		return "", fmt.Errorf("database check failed")
 	}
 	if exists {
-		return ErrFunctionAlreadyExists
+		return "", ErrFunctionAlreadyExists
 	}
 
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, artifactReader); err != nil {
-		return fmt.Errorf("failed to buffer artifact")
+		return "", fmt.Errorf("failed to buffer artifact")
 	}
 	artifactBytes := buf.Bytes()
 
@@ -49,16 +59,16 @@ func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequest
 	safe, reason, err := VerifyArtifact(ctx, artifactBytes, manifest)
 	if err != nil {
 		s.log.Error("Verifier unreachable", zap.Error(err))
-		return fmt.Errorf("verification service unavailable")
+		return "", fmt.Errorf("verification service unavailable")
 	}
 	if !safe {
 		s.log.Warn("Artifact rejected", zap.String("reason", reason))
-		return &ErrVerificationFailed{Reason: reason}
+		return "", &ErrVerificationFailed{Reason: reason}
 	}
 
 	artifactHash, err := s.hashArtifact(bytes.NewReader(artifactBytes))
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	functionID := uuid.New()
@@ -66,7 +76,7 @@ func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequest
 	err = s.storage.Upload(ctx, storageKey, bytes.NewReader(artifactBytes))
 	if err != nil {
 		s.log.Error("Failed to upload artifact to storage", zap.Error(err))
-		return fmt.Errorf("storage upload failed")
+		return "", fmt.Errorf("storage upload failed")
 	}
 
 	dbFunc := &Function{
@@ -85,11 +95,17 @@ func (s *service) Deploy(ctx context.Context, userID int, manifest DeployRequest
 	if err != nil {
 		_ = s.storage.Delete(context.Background(), storageKey)
 		s.log.Error("Failed to save function metadata", zap.Error(err))
-		return fmt.Errorf("database error")
+		return "", fmt.Errorf("database error")
+	}
+
+	accessToken, err := s.createAccessToken(ctx, dbFunc)
+	if err != nil {
+		s.log.Error("Failed to generate access token", zap.Error(err))
+		return "", fmt.Errorf("access token generation failed")
 	}
 
 	s.log.Info("Function successfully deployed", zap.String("function_id", functionID.String()))
-	return nil
+	return accessToken, nil
 }
 
 func (s *service) ListByUserID(ctx context.Context, userID int) ([]Function, error) {
@@ -115,10 +131,156 @@ func (s *service) Delete(ctx context.Context, userID int, name string) error {
 	return nil
 }
 
+func (s *service) ExecuteByAccessToken(ctx context.Context, rawToken string, payload []byte) (*ExecuteResult, error) {
+	tokenHash := s.hashToken(rawToken)
+
+	f, err := s.repo.GetByAccessToken(ctx, tokenHash)
+	if err != nil {
+		return nil, ErrAccessTokenInvalid
+	}
+
+	return s.execute(ctx, f, payload)
+}
+
+func (s *service) GenerateAccessToken(ctx context.Context, userID int, name string) (string, error) {
+	f, err := s.repo.GetByName(ctx, userID, name)
+	if err != nil {
+		return "", ErrFunctionNotFound
+	}
+
+	err = s.repo.DeleteAccessTokensByFunctionID(ctx, f.ID)
+	if err != nil {
+		s.log.Error("Failed to delete existing access tokens", zap.Error(err))
+		return "", fmt.Errorf("failed to delete existing access tokens")
+	}
+
+	accessToken, err := s.createAccessToken(ctx, f)
+	if err != nil {
+		s.log.Error("Failed to generate access token", zap.Error(err))
+		return "", fmt.Errorf("access token generation failed")
+	}
+
+	return accessToken, nil
+}
+
+func (s *service) Invoke(ctx context.Context, userID int, name string, payload []byte) (*ExecuteResult, error) {
+	f, err := s.repo.GetByName(ctx, userID, name)
+	if err != nil {
+		return nil, ErrFunctionNotFound
+	}
+
+	return s.execute(ctx, f, payload)
+}
+
+func (s *service) ListExecutions(ctx context.Context, userID int, name string) ([]ExecutionRecord, error) {
+	f, err := s.repo.GetByName(ctx, userID, name)
+	if err != nil {
+		return nil, ErrFunctionNotFound
+	}
+
+	return s.repo.GetExecutionsByFunctionID(ctx, f.ID)
+}
+
+func (s *service) DescribeExecution(ctx context.Context, executionID int64, userID int) (*ExecutionRecord, error) {
+	return s.repo.GetExecutionByID(ctx, executionID, userID)
+}
+
 func (s *service) hashArtifact(tee io.Reader) (string, error) {
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, tee); err != nil {
 		return "", fmt.Errorf("failed to calculate hash: %w", err)
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func (s *service) hashToken(token string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(token))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func (s *service) createAccessToken(ctx context.Context, f *Function) (string, error) {
+	bytes := make([]byte, 32)
+
+	if _, err := rand.Read(bytes); err != nil {
+		s.log.Error("Failed to generate access token", zap.Error(err))
+		return "", fmt.Errorf("access token generation failed")
+	}
+
+	accessToken := "oblak_exec_" + hex.EncodeToString(bytes)
+	accessTokenHash := s.hashToken(accessToken)
+	expiresAt := time.Now().Add(s.tokenTTL)
+	if err := s.repo.CreateAccessToken(ctx, f.ID.String(), accessTokenHash, expiresAt); err != nil {
+		s.log.Error("Failed to store access token", zap.Error(err))
+		return "", fmt.Errorf("access token storage failed")
+	}
+	return accessToken, nil
+}
+
+func (s *service) execute(ctx context.Context, f *Function, payload []byte) (*ExecuteResult, error) {
+	storageKey := fmt.Sprintf("functions/%d/%s.zip", f.OwnerID, f.ID)
+	artifactReader, err := s.storage.Donwload(ctx, storageKey)
+	if err != nil {
+		s.log.Error("Failed to download artifact", zap.Error(err), zap.String("key", storageKey))
+		return nil, fmt.Errorf("artifact download failed")
+	}
+	defer artifactReader.Close()
+
+	artifactBytes, err := io.ReadAll(artifactReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read artifact")
+	}
+
+	manifest := DeployRequestManifest{
+		Name:    f.Name,
+		Runtime: f.Runtime,
+		Module:  f.ModuleName,
+		Handler: f.HandlerName,
+		Timeout: f.Timeout,
+		Memory:  f.Memory,
+	}
+
+	start := time.Now()
+	createdRecord, err := s.repo.CreateExecutionRecord(ctx, &ExecutionRecord{
+		FunctionID: f.ID,
+		StartedAt:  &start,
+		FinishedAt: nil,
+		Status:     ExecutionStatusRunning,
+	})
+
+	result, err := s.orchestrator.Execute(ctx, manifest, artifactBytes, payload)
+	end := time.Now()
+	if err != nil {
+		s.log.Error("Orchestrator execution failed", zap.Error(err))
+		s.repo.UpdateExecutionRecord(ctx, &ExecutionRecord{
+			ID:           createdRecord.ID,
+			FunctionID:   f.ID,
+			FinishedAt:   &end,
+			Status:       ExecutionStatusFailed,
+			ErrorMessage: err.Error(),
+		})
+		return nil, fmt.Errorf("orchestrator execution failed")
+	}
+
+	resultData, err := json.Marshal(result.Result)
+	if err != nil {
+		s.log.Error("Failed to marshal execution result", zap.Error(err))
+		resultData = nil
+	}
+	s.repo.UpdateExecutionRecord(ctx, &ExecutionRecord{
+		ID:              createdRecord.ID,
+		FunctionID:      f.ID,
+		FinishedAt:      &end,
+		Status:          result.Status,
+		ExecutionTimeMs: result.ExecutionTimeMs,
+		Logs:            result.Logs,
+		ResultData:      string(resultData),
+		ErrorMessage:    result.ErrorMessage,
+		WorkerNode:      result.WorkerNode,
+	})
+	result.ID = createdRecord.ID
+	result.StartedAt = &start
+	result.FinishedAt = &end
+
+	return result, nil
 }
